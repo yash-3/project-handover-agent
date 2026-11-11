@@ -1,0 +1,14 @@
+.env
+.env.*
+*.key
+__pycache__/
+.venv/
+node_modules/
+.DS_Store
+chroma/
+outputs/*
+!outputs/.gitkeep
+evals/answer_key*
+target/
+.idea/
+*.iml
