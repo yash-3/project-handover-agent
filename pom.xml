@@ -12,6 +12,7 @@
   <modules>
     <module>handover-config</module>
     <module>handover-adapters</module>
+    <module>handover-core</module>
   </modules>
 
   <properties>
@@ -41,6 +42,15 @@
     </dependencies>
   </dependencyManagement>
 
+  <dependencies>
+    <!-- Lombok: compile-time only (version managed by the Spring Boot BOM) -->
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
   <build>
     <pluginManagement>
       <plugins>
@@ -53,6 +63,15 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
           <version>3.14.1</version>
+          <configuration>
+            <annotationProcessorPaths>
+              <path>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+              </path>
+            </annotationProcessorPaths>
+          </configuration>
         </plugin>
       </plugins>
     </pluginManagement>

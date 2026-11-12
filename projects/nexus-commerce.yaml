@@ -1,0 +1,38 @@
+# Handover project: https://github.com/yash-3/nexus-commerce
+# Secrets are env references only (${VAR}); literals are rejected.
+name: nexus-commerce
+languages: [java]
+repos:
+  - id: nexus-commerce
+    type: github
+    url: https://github.com/yash-3/nexus-commerce
+    branch: main
+    auth: ${GITHUB_TOKEN}      # must be set (loader fails if empty); a read-only token is enough
+    paths:
+      exclude: ["**/src/test/**"]
+ci:
+  type: github-actions
+  url: https://github.com/yash-3/nexus-commerce/actions
+  auth: ${GITHUB_TOKEN}
+deploy:
+  manifests:
+    repo: nexus-commerce
+    paths: ["k8s/**", "helm/**", "docker/**", "docker-compose*.yml", "setup_cicd_k8s.bash"]
+  environments: [dev]
+tickets:
+  type: github-issues
+  url: https://github.com/yash-3/nexus-commerce/issues
+  auth: ${GITHUB_TOKEN}
+domain:
+  vocabulary: {}
+llm:
+  workerModel: claude-haiku-5-5
+  orchestratorModel: claude-sonnet-5-5
+  maxTokensPerRun: 400000
+handover:
+  template: templates/default.md
+  outputDir: outputs/nexus-commerce
+  approvalRequired: true
+guardrails:
+  piiMasking: true
+  allowedTools: readOnly

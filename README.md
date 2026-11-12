@@ -23,5 +23,6 @@ Stack: Java 21, Spring Boot 4.1.2, Spring AI 2.0.2 (see `docs/plan.md` and the a
 ## Status
 
 - [x] `handover-config` module: `projects/*.yaml` loader, `${ENV}` resolution, validation (literal secrets rejected)
-- [x] `handover-adapters` module: ports (repo, CI, tickets, docs), type-based registry, local repo adapter
-- [ ] `core`, `knowledge`, `agents`, `orchestrator`, `guardrails`, `observability`, `evals`, `app`
+- [x] `handover-adapters` module: ports (repo, CI, tickets, docs), type-based registry, adapters for local repo, GitHub repo, GitHub Actions, GitHub Issues, docs folder
+- [x] `handover-core` module: AgentRuntime port, Spring AI (Claude) implementation, usage and cost tracking, token budget, read-only repo tools
+- [ ] `knowledge`, `agents`, `orchestrator`, `guardrails`, `observability`, `evals`, `app`
