@@ -40,15 +40,21 @@ public final class ToolPolicy {
     public void check(List<Object> tools) {
         for (Object tool : tools) {
             for (Method m : tool.getClass().getDeclaredMethods()) {
-                Tool t = m.getAnnotation(Tool.class);
-                if (t != null) {
-                    String name = t.name().isBlank() ? m.getName() : t.name();
-                    if (!allowed.contains(name)) {
-                        throw new GuardrailViolationException("Tool '" + name + "' on " + tool.getClass().getSimpleName()
-                                + " is not allowed by guardrails.allowedTools=readOnly");
-                    }
+                String name = toolName(m);
+                if (name != null && !allowed.contains(name)) {
+                    throw new GuardrailViolationException("Tool '" + name + "' on " + tool.getClass().getSimpleName()
+                            + " is not allowed by guardrails.allowedTools=readOnly");
                 }
             }
         }
+    }
+
+    /** The tool's name if the method is a {@code @Tool}, otherwise null. */
+    private static String toolName(Method m) {
+        Tool t = m.getAnnotation(Tool.class);
+        if (t == null) {
+            return null;
+        }
+        return t.name().isBlank() ? m.getName() : t.name();
     }
 }

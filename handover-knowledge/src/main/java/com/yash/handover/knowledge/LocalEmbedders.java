@@ -4,6 +4,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.transformers.TransformersEmbeddingModel;
 
 /**
@@ -13,11 +15,15 @@ import org.springframework.ai.transformers.TransformersEmbeddingModel;
  */
 public final class LocalEmbedders {
 
+    private static final Logger log = LoggerFactory.getLogger(LocalEmbedders.class);
+    private static final String TOKENIZER_FILE = "tokenizer.json";
+    private static final String MODEL_FILE = "model.onnx";
+
     static final String BASE = "https://%s/spring-projects/spring-ai/%s/models/spring-ai-transformers/"
             + "src/main/resources/onnx/all-MiniLM-L6-v2/";
-    static final String TOKENIZER_URL = String.format(BASE, "raw.githubusercontent.com", "main") + "tokenizer.json";
+    static final String TOKENIZER_URL = String.format(BASE, "raw.githubusercontent.com", "main") + TOKENIZER_FILE;
     static final String MODEL_URL = String.format(BASE, "media.githubusercontent.com/media", "refs/heads/main")
-            + "model.onnx";
+            + MODEL_FILE;
 
     private LocalEmbedders() {
     }
@@ -27,7 +33,7 @@ public final class LocalEmbedders {
     }
 
     public static Embedder onnx() {
-        return onnx(defaultCacheDir(), msg -> System.err.println("[embeddings] " + msg));
+        return onnx(defaultCacheDir(), msg -> log.info("[embeddings] {}", msg));
     }
 
     static Embedder onnx(Path cacheDir, java.util.function.Consumer<String> log) {
@@ -35,13 +41,13 @@ public final class LocalEmbedders {
         Path tokenizer;
         Path model;
         try {
-            tokenizer = downloader.ensure(TOKENIZER_URL, cacheDir.resolve("tokenizer.json"));
-            model = downloader.ensure(MODEL_URL, cacheDir.resolve("model.onnx"));
+            tokenizer = downloader.ensure(TOKENIZER_URL, cacheDir.resolve(TOKENIZER_FILE));
+            model = downloader.ensure(MODEL_URL, cacheDir.resolve(MODEL_FILE));
         } catch (IllegalStateException e) {
             throw new IllegalStateException(e.getMessage() + ". If your network needs a proxy that Java does not use "
                     + "(curl works but Java does not), download the files yourself into " + cacheDir + ":\n"
-                    + "  curl -L -o " + cacheDir.resolve("tokenizer.json") + " " + TOKENIZER_URL + "\n"
-                    + "  curl -L -o " + cacheDir.resolve("model.onnx") + " " + MODEL_URL, e);
+                    + "  curl -L -o " + cacheDir.resolve(TOKENIZER_FILE) + " " + TOKENIZER_URL + "\n"
+                    + "  curl -L -o " + cacheDir.resolve(MODEL_FILE) + " " + MODEL_URL, e);
         }
         try {
             log.accept("Loading the embedding model...");

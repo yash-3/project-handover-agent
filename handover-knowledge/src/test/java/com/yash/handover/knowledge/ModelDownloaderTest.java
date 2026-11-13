@@ -79,7 +79,10 @@ class ModelDownloaderTest {
             ex.getResponseBody().write(new byte[10]);
             ex.getResponseBody().flush();
             try {
-                Thread.sleep(10_000); // never sends the rest
+                // never released, so the rest of the body is never sent
+                if (new java.util.concurrent.CountDownLatch(1).await(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                    throw new AssertionError("the latch cannot be released");
+                }
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }

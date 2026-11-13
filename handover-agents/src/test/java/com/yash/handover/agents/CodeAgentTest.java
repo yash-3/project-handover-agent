@@ -39,8 +39,8 @@ class CodeAgentTest {
     private SectionResult run(Function<AgentRequest, String> model) {
         new KnowledgeIndexer(Chunker.defaults(), embedder, store).index("p", repo);
         return new CodeAgent(req -> new AgentResult(model.apply(req),
-                new UsageSummary(req.model(), 1, 1, 0, 0, null)), "p", "claude-sonnet-5-5", embedder, store, repo, 3)
-                .run();
+                new UsageSummary(req.model(), 1, 1, 0, 0, null)), "claude-sonnet-5-5",
+                new KnowledgeAccess("p", embedder, store, 3), repo).run();
     }
 
     @Test
@@ -78,7 +78,8 @@ class CodeAgentTest {
         return new CodeAgent(req -> {
             calls.incrementAndGet();
             return new AgentResult(model.apply(req), new UsageSummary(req.model(), 100, 10, 0, 0, null));
-        }, "p", "claude-sonnet-5-5", embedder, store, repo, 3, repair).run();
+        }, "claude-sonnet-5-5", new KnowledgeAccess("p", embedder, store, 3), repo, repair,
+                com.yash.handover.guardrails.Redactor.secretsOnly()).run();
     }
 
     private static String firstThenFixed(AgentRequest req) {

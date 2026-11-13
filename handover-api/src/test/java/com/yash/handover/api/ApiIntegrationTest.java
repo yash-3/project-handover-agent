@@ -1,6 +1,7 @@
 package com.yash.handover.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import java.math.BigDecimal;
 import java.net.URI;
@@ -8,6 +9,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -64,7 +66,9 @@ class ApiIntegrationTest {
         public DraftOutcome draft(String project, Consumer<String> progress) {
             progress.accept("Started: code agent");
             try {
-                GATE.get().await(10, TimeUnit.SECONDS);
+                if (!GATE.get().await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("the test never opened the draft gate");
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -196,15 +200,13 @@ class ApiIntegrationTest {
         assertThat(call("GET", "/api/projects/demo/report", KEY, null).body()).isEqualTo("Trace: none");
     }
 
-    private JsonNode waitFor(String id, String status) throws Exception {
-        for (int i = 0; i < 100; i++) {
-            JsonNode n = tree(call("GET", "/api/jobs/" + id, KEY, null));
-            if (status.equals(n.path("status").asString())) {
-                return n;
-            }
-            Thread.sleep(50);
-        }
-        throw new AssertionError("job did not reach " + status);
+    private JsonNode waitFor(String id, String status) {
+        JsonNode[] last = new JsonNode[1];
+        await().atMost(Duration.ofSeconds(10)).pollInterval(Duration.ofMillis(50)).until(() -> {
+            last[0] = tree(call("GET", "/api/jobs/" + id, KEY, null));
+            return status.equals(last[0].path("status").asString());
+        });
+        return last[0];
     }
 
     @Test

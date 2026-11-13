@@ -14,6 +14,8 @@ import tools.jackson.dataformat.yaml.YAMLMapper;
 /** Loads and validates an eval question set (YAML with a top-level {@code questions:} list). */
 public final class EvalSetLoader {
 
+    private static final String INVALID = "Invalid eval set ";
+
     private record EvalFile(List<EvalCase> questions) {
     }
 
@@ -38,29 +40,39 @@ public final class EvalSetLoader {
         try {
             f = MAPPER.readValue(yaml, EvalFile.class);
         } catch (RuntimeException e) {
-            throw new IllegalStateException("Invalid eval set " + name + ": " + e.getMessage(), e);
+            throw new IllegalStateException(INVALID + name + ": " + e.getMessage(), e);
+        }
+        if (f == null || f.questions() == null || f.questions().isEmpty()) {
+            throw new IllegalStateException(INVALID + name + ": 'questions' must be a non-empty list");
         }
         List<String> problems = new ArrayList<>();
-        if (f == null || f.questions() == null || f.questions().isEmpty()) {
-            throw new IllegalStateException("Invalid eval set " + name + ": 'questions' must be a non-empty list");
-        }
         Set<String> ids = new HashSet<>();
         for (EvalCase c : f.questions()) {
-            String who = "question '" + c.id() + "'";
-            if (c.id() == null || c.id().isBlank()) problems.add("a question has no id");
-            else if (!ids.add(c.id())) problems.add(who + ": duplicate id");
-            if (c.question() == null || c.question().isBlank()) problems.add(who + ": question text is required");
-            if (c.unanswerable() && (!c.mustContain().isEmpty() || !c.mustCite().isEmpty())) {
-                problems.add(who + ": expectNotFound questions must not have mustContain or mustCite");
-            }
-            if (!c.unanswerable() && c.mustContain().isEmpty() && c.mustCite().isEmpty()
-                    && (c.reference() == null || c.reference().isBlank())) {
-                problems.add(who + ": needs mustContain, mustCite or reference, otherwise nothing can fail");
-            }
+            validate(c, ids, problems);
         }
         if (!problems.isEmpty()) {
-            throw new IllegalStateException("Invalid eval set " + name + ":\n - " + String.join("\n - ", problems));
+            throw new IllegalStateException(INVALID + name + ":\n - " + String.join("\n - ", problems));
         }
         return f.questions();
+    }
+
+    private static void validate(EvalCase c, Set<String> ids, List<String> problems) {
+        String who = "question '" + c.id() + "'";
+        if (c.id() == null || c.id().isBlank()) {
+            problems.add("a question has no id");
+        } else if (!ids.add(c.id())) {
+            problems.add(who + ": duplicate id");
+        }
+        if (c.question() == null || c.question().isBlank()) {
+            problems.add(who + ": question text is required");
+        }
+        boolean hasChecks = !c.mustContain().isEmpty() || !c.mustCite().isEmpty();
+        if (c.unanswerable() && hasChecks) {
+            problems.add(who + ": expectNotFound questions must not have mustContain or mustCite");
+        }
+        boolean hasReference = c.reference() != null && !c.reference().isBlank();
+        if (!c.unanswerable() && !hasChecks && !hasReference) {
+            problems.add(who + ": needs mustContain, mustCite or reference, otherwise nothing can fail");
+        }
     }
 }

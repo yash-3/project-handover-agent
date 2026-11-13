@@ -1,6 +1,7 @@
 package com.yash.handover.knowledge;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,21 +48,8 @@ public final class Chunker {
         List<Chunk> out = new ArrayList<>();
         int start = 0;
         while (start < lines.length) {
-            int end = start;
-            int chars = 0;
-            int lastBlank = -1;
-            while (end < lines.length && (end == start || chars + lines[end].length() + 1 <= maxChars)) {
-                chars += lines[end].length() + 1;
-                if (lines[end].isBlank() && end > start) {
-                    lastBlank = end;
-                }
-                end++;
-            }
-            // end is exclusive; if we stopped early, break at the last blank line when there is one
-            if (end < lines.length && lastBlank > start) {
-                end = lastBlank + 1;
-            }
-            String text = String.join("\n", java.util.Arrays.copyOfRange(lines, start, end)).strip();
+            int end = windowEnd(lines, start);
+            String text = String.join("\n", Arrays.copyOfRange(lines, start, end)).strip();
             if (!text.isEmpty()) {
                 out.add(new Chunk(repoId, path, start + 1, end, language, text));
             }
@@ -71,5 +59,20 @@ public final class Chunker {
             start = Math.max(end - overlapLines, start + 1);
         }
         return out;
+    }
+
+    /** Exclusive end of the window starting at {@code start}: as many whole lines as fit, ending at a blank line if one was passed. */
+    private int windowEnd(String[] lines, int start) {
+        int end = start;
+        int chars = 0;
+        int lastBlank = -1;
+        while (end < lines.length && (end == start || chars + lines[end].length() + 1 <= maxChars)) {
+            chars += lines[end].length() + 1;
+            if (end > start && lines[end].isBlank()) {
+                lastBlank = end;
+            }
+            end++;
+        }
+        return end < lines.length && lastBlank > start ? lastBlank + 1 : end;
     }
 }

@@ -3,6 +3,7 @@ package com.yash.handover.core;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,6 +20,9 @@ import tools.jackson.databind.json.JsonMapper;
 public final class TraceReport {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
+    private static final String AGENT_RUN = "agent_run";
+    private static final String TOOL_CALL = "tool_call";
+    private static final int COST_SCALE = 4;
 
     private TraceReport() {
     }
@@ -32,87 +36,108 @@ public final class TraceReport {
         int toolCalls;
         BigDecimal cost = BigDecimal.ZERO;
         boolean costComplete = true;
+
+        void add(JsonNode n) {
+            boolean ok = n.path("ok").asBoolean(false);
+            runs++;
+            if (!ok) {
+                failed++;
+            }
+            in += n.path("inputTokens").asLong(0);
+            out += n.path("outputTokens").asLong(0);
+            millis += n.path("millis").asLong(0);
+            toolCalls += n.path("toolCalls").asInt(0);
+            String costText = n.path("costUsd").asString(null);
+            if (costText != null) {
+                cost = cost.add(new BigDecimal(costText));
+            } else if (ok) {
+                costComplete = false; // a successful run with no known price: the total is a lower bound
+            }
+        }
     }
 
     private static final class ToolStats {
         int calls;
         int failed;
         long millis;
+
+        void add(JsonNode n) {
+            calls++;
+            if (!n.path("ok").asBoolean(false)) {
+                failed++;
+            }
+            millis += n.path("millis").asLong(0);
+        }
+    }
+
+    /** Everything read from one trace file. */
+    private static final class Totals {
+        final Set<String> runIds = new HashSet<>();
+        final Map<String, AgentStats> agents = new TreeMap<>();
+        final Map<String, ToolStats> tools = new TreeMap<>();
+        int badLines;
+
+        void accept(String line) {
+            JsonNode n;
+            try {
+                n = JSON.readTree(line);
+            } catch (RuntimeException e) {
+                badLines++;
+                return;
+            }
+            runIds.add(n.path("runId").asString(""));
+            String type = n.path("type").asString("");
+            if (AGENT_RUN.equals(type)) {
+                agents.computeIfAbsent(n.path("agent").asString("?"), k -> new AgentStats()).add(n);
+            } else if (TOOL_CALL.equals(type)) {
+                tools.computeIfAbsent(n.path("tool").asString("?"), k -> new ToolStats()).add(n);
+            }
+        }
     }
 
     public static String summarize(Path file) {
         if (!Files.isRegularFile(file)) {
             return "No trace found at " + file + ". Run an agent command first (draft, ask, code, devops, tickets).";
         }
-        Set<String> runIds = new HashSet<>();
-        Map<String, AgentStats> agents = new TreeMap<>();
-        Map<String, ToolStats> tools = new TreeMap<>();
-        int badLines = 0;
+        Totals totals = new Totals();
         try {
             for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
-                if (line.isBlank()) {
-                    continue;
-                }
-                JsonNode n;
-                try {
-                    n = JSON.readTree(line);
-                } catch (RuntimeException e) {
-                    badLines++;
-                    continue;
-                }
-                runIds.add(n.path("runId").asString(""));
-                if ("agent_run".equals(n.path("type").asString(""))) {
-                    AgentStats a = agents.computeIfAbsent(n.path("agent").asString("?"), k -> new AgentStats());
-                    a.runs++;
-                    if (!n.path("ok").asBoolean(false)) {
-                        a.failed++;
-                    }
-                    a.in += n.path("inputTokens").asLong(0);
-                    a.out += n.path("outputTokens").asLong(0);
-                    a.millis += n.path("millis").asLong(0);
-                    a.toolCalls += n.path("toolCalls").asInt(0);
-                    String cost = n.path("costUsd").asString(null);
-                    if (cost == null) {
-                        if (n.path("ok").asBoolean(false)) {
-                            a.costComplete = false;
-                        }
-                    } else {
-                        a.cost = a.cost.add(new BigDecimal(cost));
-                    }
-                } else if ("tool_call".equals(n.path("type").asString(""))) {
-                    ToolStats t = tools.computeIfAbsent(n.path("tool").asString("?"), k -> new ToolStats());
-                    t.calls++;
-                    if (!n.path("ok").asBoolean(false)) {
-                        t.failed++;
-                    }
-                    t.millis += n.path("millis").asLong(0);
+                if (!line.isBlank()) {
+                    totals.accept(line);
                 }
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Cannot read the trace file " + file, e);
         }
+        return render(file, totals);
+    }
+
+    private static String render(Path file, Totals t) {
         StringBuilder sb = new StringBuilder("Trace: " + file + "\n");
-        int runs = agents.values().stream().mapToInt(a -> a.runs).sum();
-        int failed = agents.values().stream().mapToInt(a -> a.failed).sum();
-        long in = agents.values().stream().mapToLong(a -> a.in).sum();
-        long out = agents.values().stream().mapToLong(a -> a.out).sum();
-        BigDecimal cost = agents.values().stream().map(a -> a.cost).reduce(BigDecimal.ZERO, BigDecimal::add);
-        boolean complete = agents.values().stream().allMatch(a -> a.costComplete);
+        int runs = t.agents.values().stream().mapToInt(a -> a.runs).sum();
+        int failed = t.agents.values().stream().mapToInt(a -> a.failed).sum();
+        long in = t.agents.values().stream().mapToLong(a -> a.in).sum();
+        long out = t.agents.values().stream().mapToLong(a -> a.out).sum();
+        BigDecimal cost = t.agents.values().stream().map(a -> a.cost).reduce(BigDecimal.ZERO, BigDecimal::add);
+        boolean complete = t.agents.values().stream().allMatch(a -> a.costComplete);
         sb.append(String.format(Locale.ROOT, "CLI runs: %d | agent runs: %d (%d failed) | tool calls: %d%n",
-                runIds.size(), runs, failed, tools.values().stream().mapToInt(t -> t.calls).sum()));
+                t.runIds.size(), runs, failed, t.tools.values().stream().mapToInt(x -> x.calls).sum()));
         sb.append(String.format(Locale.ROOT, "Tokens: %d in, %d out | est. cost USD: %s%s%n", in, out,
-                cost.setScale(4, java.math.RoundingMode.HALF_UP).toPlainString(), complete ? "" : " (lower bound)"));
+                money(cost), complete ? "" : " (lower bound)"));
         sb.append("\nBy agent:\n");
-        agents.forEach((name, a) -> sb.append(String.format(Locale.ROOT,
+        t.agents.forEach((name, a) -> sb.append(String.format(Locale.ROOT,
                 "  %-16s runs %-3d failed %-2d tokens %-9d cost $%-8s time %5.1fs  tool calls %d%n", name, a.runs,
-                a.failed, a.in + a.out, a.cost.setScale(4, java.math.RoundingMode.HALF_UP).toPlainString(),
-                a.millis / 1000.0, a.toolCalls)));
+                a.failed, a.in + a.out, money(a.cost), a.millis / 1000.0, a.toolCalls)));
         sb.append("\nBy tool:\n");
-        tools.forEach((name, t) -> sb.append(String.format(Locale.ROOT,
-                "  %-16s calls %-4d failed %-3d avg %d ms%n", name, t.calls, t.failed, t.millis / Math.max(1, t.calls))));
-        if (badLines > 0) {
-            sb.append("\n").append(badLines).append(" unreadable line(s) skipped.\n");
+        t.tools.forEach((name, x) -> sb.append(String.format(Locale.ROOT,
+                "  %-16s calls %-4d failed %-3d avg %d ms%n", name, x.calls, x.failed, x.millis / Math.max(1, x.calls))));
+        if (t.badLines > 0) {
+            sb.append("\n").append(t.badLines).append(" unreadable line(s) skipped.\n");
         }
         return sb.toString();
+    }
+
+    private static String money(BigDecimal amount) {
+        return amount.setScale(COST_SCALE, RoundingMode.HALF_UP).toPlainString();
     }
 }

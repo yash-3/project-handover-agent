@@ -15,6 +15,7 @@ import java.util.stream.Stream;
 
 import com.yash.handover.adapters.Adapters;
 import com.yash.handover.adapters.repo.RepoSource;
+import com.yash.handover.agents.KnowledgeAccess;
 import com.yash.handover.agents.QaAgent;
 import com.yash.handover.agents.HandoverWriter;
 import com.yash.handover.config.ConfigLoader;
@@ -34,6 +35,7 @@ import com.yash.handover.orchestrator.Approval;
 public final class DefaultHandoverService implements HandoverService {
 
     static final String NAME_PATTERN = "[a-z0-9][a-z0-9-]*";
+    private static final String YAML_EXTENSION = ".yaml";
     private static final int TOP_K = 6;
     private static final int EMBEDDING_DIMS = 384;
 
@@ -54,8 +56,8 @@ public final class DefaultHandoverService implements HandoverService {
             return List.of();
         }
         try (Stream<Path> files = Files.list(projectsDir)) {
-            return files.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(".yaml"))
-                    .map(n -> n.substring(0, n.length() - ".yaml".length())).filter(n -> n.matches(NAME_PATTERN))
+            return files.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(YAML_EXTENSION))
+                    .map(n -> n.substring(0, n.length() - YAML_EXTENSION.length())).filter(n -> n.matches(NAME_PATTERN))
                     .sorted().toList();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -84,8 +86,9 @@ public final class DefaultHandoverService implements HandoverService {
         ProjectConfig.Repo first = config.repos().get(0);
         RepoSource source = adapters.repos().create(first.type(), first);
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
-        QaAgent agent = new QaAgent(Runtimes.guarded(config, usage), config.name(), config.llm().workerModel(),
-                embedder(), store(), source, TOP_K, Redactor.from(config.guardrails()));
+        QaAgent agent = new QaAgent(Runtimes.guarded(config, usage), config.llm().workerModel(),
+                new KnowledgeAccess(config.name(), embedder(), store(), TOP_K), source,
+                Redactor.from(config.guardrails()));
         var answer = agent.ask(question);
         return new AskOutcome(answer, usage.totalTokens(), usage.totalCostUsd());
     }
@@ -125,7 +128,7 @@ public final class DefaultHandoverService implements HandoverService {
         if (project == null || !project.matches(NAME_PATTERN)) {
             throw new IllegalArgumentException("Invalid project name");
         }
-        Path file = projectsDir.resolve(project + ".yaml");
+        Path file = projectsDir.resolve(project + YAML_EXTENSION);
         if (!Files.isRegularFile(file)) {
             throw new NoSuchElementException("Unknown project: " + project);
         }

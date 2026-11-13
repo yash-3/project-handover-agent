@@ -17,6 +17,10 @@ import java.util.function.Function;
 final class JobService {
 
     static final int MAX_PROGRESS_LINES = 200;
+    private static final String RUNNING = "RUNNING";
+    private static final String DONE = "DONE";
+    private static final String FAILED = "FAILED";
+    private static final int MAX_ERROR_CHARS = 300;
 
     static final class Conflict extends RuntimeException {
         Conflict(String message) {
@@ -35,7 +39,7 @@ final class JobService {
         final String kind;
         final Instant startedAt = Instant.now();
         final List<String> progress = new ArrayList<>();
-        String status = "RUNNING";
+        String status = RUNNING;
         Instant finishedAt;
         Map<String, Object> result;
         String error;
@@ -57,21 +61,23 @@ final class JobService {
     String submit(String project, String kind, Function<Consumer<String>, Map<String, Object>> work) {
         Job job = new Job(project, kind);
         synchronized (this) {
-            if (jobs.values().stream().anyMatch(j -> j.project.equals(project) && j.status.equals("RUNNING"))) {
+            if (jobs.values().stream().anyMatch(j -> j.project.equals(project) && j.status.equals(RUNNING))) {
                 throw new Conflict("A job is already running for this project");
             }
             jobs.put(job.id, job);
             if (jobs.size() > maxJobs) {
-                jobs.values().stream().filter(j -> !j.status.equals("RUNNING")).findFirst()
+                jobs.values().stream().filter(j -> !j.status.equals(RUNNING)).findFirst()
                         .ifPresent(old -> jobs.remove(old.id));
             }
         }
         Thread.ofVirtual().name("job-" + kind).start(() -> {
             try {
                 Map<String, Object> result = work.apply(line -> addProgress(job, line));
-                finish(job, "DONE", result, null);
-            } catch (Throwable t) {
-                finish(job, "FAILED", null, t.getClass().getSimpleName() + ": " + truncate(t.getMessage()));
+                finish(job, DONE, result, null);
+            } catch (RuntimeException e) {
+                finish(job, FAILED, null, e.getClass().getSimpleName() + ": " + truncate(e.getMessage()));
+            } finally {
+                failIfStillRunning(job); // an Error (not caught above) must not leave the job RUNNING forever
             }
         });
         return job.id;
@@ -89,6 +95,12 @@ final class JobService {
         }
     }
 
+    private synchronized void failIfStillRunning(Job job) {
+        if (job.status.equals(RUNNING)) {
+            finish(job, FAILED, null, "The job ended unexpectedly");
+        }
+    }
+
     private synchronized void finish(Job job, String status, Map<String, Object> result, String error) {
         job.status = status;
         job.result = result;
@@ -98,6 +110,6 @@ final class JobService {
 
     private static String truncate(String s) {
         String m = s == null ? "" : s;
-        return m.length() > 300 ? m.substring(0, 300) + "..." : m;
+        return m.length() > MAX_ERROR_CHARS ? m.substring(0, MAX_ERROR_CHARS) + "..." : m;
     }
 }

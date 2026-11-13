@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 import com.yash.handover.adapters.Adapters;
 import com.yash.handover.adapters.repo.RepoSource;
@@ -12,6 +13,7 @@ import com.yash.handover.agents.Answer;
 import com.yash.handover.adapters.ci.CISource;
 import com.yash.handover.agents.CodeAgent;
 import com.yash.handover.agents.DevOpsAgent;
+import com.yash.handover.agents.KnowledgeAccess;
 import com.yash.handover.agents.QaAgent;
 import com.yash.handover.agents.SectionResult;
 import com.yash.handover.agents.TicketAgent;
@@ -46,13 +48,23 @@ import com.yash.handover.orchestrator.Approval;
  */
 public final class HandoverCli {
 
-    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  code <project>\n  devops <project>\n  draft <project>\n  approve <project> <your name>\n  report <project>\n  eval <project> [--judge] [file]\n  tickets <project>";
+    static final String USAGE = String.join("\n", "Usage:", "  index <project>", "  ask <project> <question...>",
+            "  code <project>", "  devops <project>", "  draft <project>", "  approve <project> <your name>",
+            "  report <project>", "  eval <project> [--judge] [file]", "  tickets <project>");
+    private static final List<String> COMMANDS = List.of("index", "ask", "code", "devops", "draft", "approve",
+            "report", "eval", "tickets");
+    private static final Pattern PROJECT_NAME = Pattern.compile("[a-z0-9][a-z0-9-]*");
+    private static final String VERIFIED_CITATIONS = "Verified citations: ";
+    private static final String OUTPUT_DIR_REQUIRED = "handover.outputDir must be set in the project config";
     private static final int EMBEDDING_DIMS = 384;
     private static final int TOP_K = 6;
+    private static final int EXIT_USAGE = 2;
 
     private HandoverCli() {
     }
 
+    // A command line tool legitimately owns the process streams and its exit code.
+    @SuppressWarnings({"java:S106", "java:S1147"})
     public static void main(String[] args) {
         // Some networks black-hole IPv6, which makes Java (unlike curl) hang until timeout.
         System.setProperty("java.net.preferIPv4Stack", "true");
@@ -60,52 +72,13 @@ public final class HandoverCli {
     }
 
     static int run(String[] args, Function<String, String> env, PrintStream out, PrintStream err) {
-        if (args.length < 2 || !List.of("index", "ask", "code", "devops", "draft", "approve", "report", "eval", "tickets").contains(args[0])
-                || ((args[0].equals("ask") || args[0].equals("approve")) && args.length < 3)) {
-            err.println(USAGE);
-            return 2;
-        }
-        String project = args[1];
-        if (!project.matches("[a-z0-9][a-z0-9-]*")) {
-            err.println("Invalid project name: " + project);
-            return 2;
+        String problem = argumentProblem(args);
+        if (problem != null) {
+            err.println(problem);
+            return EXIT_USAGE;
         }
         try {
-            ProjectConfig config = new ConfigLoader(env).load(Path.of("projects", project + ".yaml"));
-            if (args[0].equals("report")) { // needs only the config
-                var file = Runtimes.traceFile(config);
-                if (file == null) {
-                    throw new IllegalStateException("handover.outputDir must be set in the project config");
-                }
-                out.println(TraceReport.summarize(file));
-                return 0;
-            }
-            if (args[0].equals("approve")) { // needs only the config
-                return approve(config, String.join(" ", Arrays.copyOfRange(args, 2, args.length)), out);
-            }
-            if (args[0].equals("devops")) { // needs no database or embeddings
-                return devops(config, Adapters.defaults(), out);
-            }
-            if (args[0].equals("tickets")) { // needs no database or embeddings
-                return tickets(config, Adapters.defaults(), out);
-            }
-            ChunkStore store = new PgVectorChunkStore(dataSource(AppSettings.fromEnv(env)), EMBEDDING_DIMS);
-            Embedder embedder = LocalEmbedders.onnx();
-            Adapters adapters = Adapters.defaults();
-            if (args[0].equals("index")) {
-                return index(config, adapters, embedder, store, out);
-            }
-            if (args[0].equals("eval")) {
-                return EvalCommand.run(config, adapters, embedder, store,
-                        Arrays.asList(args).subList(2, args.length), out);
-            }
-            if (args[0].equals("draft")) {
-                return DraftCommand.run(config, adapters, embedder, store, out);
-            }
-            if (args[0].equals("code")) {
-                return code(config, adapters, embedder, store, out);
-            }
-            return ask(config, adapters, embedder, store, String.join(" ", Arrays.copyOfRange(args, 2, args.length)), out);
+            return execute(args, env, out);
         } catch (RuntimeException e) {
             err.println("Error: " + e.getMessage());
             for (Throwable c = e.getCause(); c != null && c != c.getCause(); c = c.getCause()) {
@@ -113,6 +86,68 @@ public final class HandoverCli {
             }
             return 1;
         }
+    }
+
+    /** Null when the arguments are usable, otherwise the message to show. */
+    private static String argumentProblem(String[] args) {
+        boolean needsText = args.length > 0 && (args[0].equals("ask") || args[0].equals("approve"));
+        if (args.length < 2 || !COMMANDS.contains(args[0]) || (needsText && args.length < 3)) {
+            return USAGE;
+        }
+        return PROJECT_NAME.matcher(args[1]).matches() ? null : "Invalid project name: " + args[1];
+    }
+
+    private static int execute(String[] args, Function<String, String> env, PrintStream out) {
+        ProjectConfig config = new ConfigLoader(env).load(Path.of("projects", args[1] + ".yaml"));
+        String text = String.join(" ", Arrays.copyOfRange(args, 2, args.length));
+        return switch (args[0]) {
+            case "report" -> report(config, out); // these four need no database or embeddings
+            case "approve" -> approve(config, text, out);
+            case "devops" -> devops(config, Adapters.defaults(), out);
+            case "tickets" -> tickets(config, Adapters.defaults(), out);
+            default -> withKnowledge(args, text, config, env, out);
+        };
+    }
+
+    private static int withKnowledge(String[] args, String text, ProjectConfig config, Function<String, String> env,
+            PrintStream out) {
+        ChunkStore store = new PgVectorChunkStore(dataSource(AppSettings.fromEnv(env)), EMBEDDING_DIMS);
+        Embedder embedder = LocalEmbedders.onnx();
+        Adapters adapters = Adapters.defaults();
+        return switch (args[0]) {
+            case "index" -> index(config, adapters, embedder, store, out);
+            case "eval" -> EvalCommand.run(config, adapters, embedder, store,
+                    Arrays.asList(args).subList(2, args.length), out);
+            case "draft" -> DraftCommand.run(config, adapters, embedder, store, out);
+            case "code" -> code(config, adapters, embedder, store, out);
+            default -> ask(config, adapters, embedder, store, text, out);
+        };
+    }
+
+    private static int report(ProjectConfig config, PrintStream out) {
+        var file = Runtimes.traceFile(config);
+        if (file == null) {
+            throw new IllegalStateException(OUTPUT_DIR_REQUIRED);
+        }
+        out.println(TraceReport.summarize(file));
+        return 0;
+    }
+
+    private static void printCited(PrintStream out, String text, String label, List<String> verified) {
+        out.println(text);
+        out.println();
+        out.println(label + verified);
+    }
+
+    private static void printWarning(PrintStream out, String warning, List<String> unverified) {
+        if (!unverified.isEmpty()) {
+            out.println(warning + unverified);
+        }
+    }
+
+    private static void printUsage(PrintStream out, RunUsage usage) {
+        out.println("Tokens: " + usage.totalTokens() + ", est. cost USD: " + usage.totalCostUsd().toPlainString()
+                + (usage.costComplete() ? "" : " (lower bound)"));
     }
 
     private static javax.sql.DataSource dataSource(AppSettings s) {
@@ -136,16 +171,12 @@ public final class HandoverCli {
         RepoSource source = adapters.repos().create(first.type(), first);
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
         var runtime = Runtimes.guarded(config, usage);
-        SectionResult r = new CodeAgent(runtime, config.name(), config.llm().orchestratorModel(), embedder, store,
-                source, TOP_K, repairFlag(config), Redactor.from(config.guardrails())).run();
-        out.println(r.markdown());
-        out.println();
-        out.println("Verified citations: " + r.verifiedRefs());
-        if (!r.fullyGrounded()) {
-            out.println("WARNING - citations the agent never saw (may be wrong): " + r.unverifiedRefs());
-        }
-        out.println("Tokens: " + usage.totalTokens() + ", est. cost USD: " + usage.totalCostUsd().toPlainString()
-                + (usage.costComplete() ? "" : " (lower bound)"));
+        SectionResult r = new CodeAgent(runtime, config.llm().orchestratorModel(),
+                new KnowledgeAccess(config.name(), embedder, store, TOP_K), source, repairFlag(config),
+                Redactor.from(config.guardrails())).run();
+        printCited(out, r.markdown(), VERIFIED_CITATIONS, r.verifiedRefs());
+        printWarning(out, "WARNING - citations the agent never saw (may be wrong): ", r.unverifiedRefs());
+        printUsage(out, usage);
         return 0;
     }
 
@@ -155,7 +186,7 @@ public final class HandoverCli {
 
     private static int approve(ProjectConfig config, String approver, PrintStream out) {
         if (config.handover() == null || config.handover().outputDir() == null) {
-            throw new IllegalStateException("handover.outputDir must be set in the project config");
+            throw new IllegalStateException(OUTPUT_DIR_REQUIRED);
         }
         var r = Approval.approve(Path.of(config.handover().outputDir()), approver, java.time.LocalDate.now());
         out.println("Approved: " + r.file());
@@ -175,14 +206,9 @@ public final class HandoverCli {
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
         var runtime = Runtimes.guarded(config, usage);
         SectionResult r = new DevOpsAgent(runtime, config.llm().orchestratorModel(), source, manifests, ci, repairFlag(config), Redactor.from(config.guardrails())).run();
-        out.println(r.markdown());
-        out.println();
-        out.println("Verified citations: " + r.verifiedRefs());
-        if (!r.fullyGrounded()) {
-            out.println("WARNING - citations of files the agent never read (may be wrong): " + r.unverifiedRefs());
-        }
-        out.println("Tokens: " + usage.totalTokens() + ", est. cost USD: " + usage.totalCostUsd().toPlainString()
-                + (usage.costComplete() ? "" : " (lower bound)"));
+        printCited(out, r.markdown(), VERIFIED_CITATIONS, r.verifiedRefs());
+        printWarning(out, "WARNING - citations of files the agent never read (may be wrong): ", r.unverifiedRefs());
+        printUsage(out, usage);
         return 0;
     }
 
@@ -194,14 +220,9 @@ public final class HandoverCli {
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
         var runtime = Runtimes.guarded(config, usage);
         SectionResult r = new TicketAgent(runtime, config.llm().workerModel(), source, Redactor.from(config.guardrails())).run();
-        out.println(r.markdown());
-        out.println();
-        out.println("Verified ticket refs: " + r.verifiedRefs());
-        if (!r.fullyGrounded()) {
-            out.println("WARNING - refs not found in the tracker (may be invented): " + r.unverifiedRefs());
-        }
-        out.println("Tokens: " + usage.totalTokens() + ", est. cost USD: " + usage.totalCostUsd().toPlainString()
-                + (usage.costComplete() ? "" : " (lower bound)"));
+        printCited(out, r.markdown(), "Verified ticket refs: ", r.verifiedRefs());
+        printWarning(out, "WARNING - refs not found in the tracker (may be invented): ", r.unverifiedRefs());
+        printUsage(out, usage);
         return 0;
     }
 
@@ -211,16 +232,12 @@ public final class HandoverCli {
         RepoSource source = adapters.repos().create(first.type(), first);
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
         var runtime = Runtimes.guarded(config, usage);
-        QaAgent agent = new QaAgent(runtime, config.name(), config.llm().workerModel(), embedder, store, source, TOP_K, Redactor.from(config.guardrails()));
+        QaAgent agent = new QaAgent(runtime, config.llm().workerModel(),
+                new KnowledgeAccess(config.name(), embedder, store, TOP_K), source, Redactor.from(config.guardrails()));
         Answer a = agent.ask(question);
-        out.println(a.text());
-        out.println();
-        out.println("Verified citations: " + a.verifiedCitations());
-        if (!a.fullyGrounded()) {
-            out.println("WARNING - citations not found by search (may be wrong): " + a.unverifiedCitations());
-        }
-        out.println("Tokens: " + usage.totalTokens() + ", est. cost USD: " + usage.totalCostUsd().toPlainString()
-                + (usage.costComplete() ? "" : " (lower bound)"));
+        printCited(out, a.text(), VERIFIED_CITATIONS, a.verifiedCitations());
+        printWarning(out, "WARNING - citations not found by search (may be wrong): ", a.unverifiedCitations());
+        printUsage(out, usage);
         return 0;
     }
 }

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -121,24 +122,23 @@ public final class ConfigLoader {
     private void resolveEnv(JsonNode node, String path, List<String> problems) {
         if (node instanceof ObjectNode obj) {
             for (String key : List.copyOf(obj.propertyNames())) {
-                JsonNode child = obj.get(key);
-                String childPath = path.isEmpty() ? key : path + "." + key;
-                if (child.isString()) {
-                    obj.set(key, StringNode.valueOf(substitute(child.asString(), childPath, problems)));
-                } else {
-                    resolveEnv(child, childPath, problems);
-                }
+                resolveChild(obj.get(key), path.isEmpty() ? key : path + "." + key, problems,
+                        replacement -> obj.set(key, replacement));
             }
         } else if (node instanceof ArrayNode arr) {
             for (int i = 0; i < arr.size(); i++) {
-                JsonNode child = arr.get(i);
-                String childPath = path + "[" + i + "]";
-                if (child.isString()) {
-                    arr.set(i, StringNode.valueOf(substitute(child.asString(), childPath, problems)));
-                } else {
-                    resolveEnv(child, childPath, problems);
-                }
+                int index = i;
+                resolveChild(arr.get(i), path + "[" + i + "]", problems, replacement -> arr.set(index, replacement));
             }
+        }
+    }
+
+    /** Substitutes ${ENV} in a string child, or descends into an object or array child. */
+    private void resolveChild(JsonNode child, String path, List<String> problems, Consumer<StringNode> replace) {
+        if (child.isString()) {
+            replace.accept(StringNode.valueOf(substitute(child.asString(), path, problems)));
+        } else {
+            resolveEnv(child, path, problems);
         }
     }
 
@@ -164,21 +164,7 @@ public final class ConfigLoader {
         if (c.repos() == null || c.repos().isEmpty()) {
             problems.add("repos: at least one repo is required");
         } else {
-            List<String> ids = new ArrayList<>();
-            for (int i = 0; i < c.repos().size(); i++) {
-                ProjectConfig.Repo r = c.repos().get(i);
-                String p = "repos[" + i + "]";
-                if (blank(r.id())) problems.add(p + ".id: required");
-                else if (ids.contains(r.id())) problems.add(p + ".id: duplicate '" + r.id() + "'");
-                else ids.add(r.id());
-                if (blank(r.type())) problems.add(p + ".type: required");
-                if (blank(r.url())) problems.add(p + ".url: required (path for type 'local')");
-            }
-            if (c.deploy() != null && c.deploy().manifests() != null
-                    && !ids.contains(c.deploy().manifests().repo())) {
-                problems.add("deploy.manifests.repo: '" + c.deploy().manifests().repo()
-                        + "' is not one of the repo ids " + ids);
-            }
+            validateRepos(c, problems);
         }
         if (c.ci() != null && (blank(c.ci().type()) || blank(c.ci().url()))) {
             problems.add("ci: type and url are required when ci is present");
@@ -186,9 +172,38 @@ public final class ConfigLoader {
         if (c.tickets() != null && (blank(c.tickets().type()) || blank(c.tickets().url()))) {
             problems.add("tickets: type and url are required when tickets is present");
         }
-        if (c.guardrails() != null && c.guardrails().allowedTools() != null
-                && !c.guardrails().allowedTools().equals("readOnly")) {
-            problems.add("guardrails.allowedTools: only 'readOnly' is supported, got '" + c.guardrails().allowedTools() + "'");
+        validateLimits(c, problems);
+    }
+
+    private void validateRepos(ProjectConfig c, List<String> problems) {
+        List<String> ids = new ArrayList<>();
+        for (int i = 0; i < c.repos().size(); i++) {
+            ProjectConfig.Repo r = c.repos().get(i);
+            String p = "repos[" + i + "]";
+            if (blank(r.id())) {
+                problems.add(p + ".id: required");
+            } else if (ids.contains(r.id())) {
+                problems.add(p + ".id: duplicate '" + r.id() + "'");
+            } else {
+                ids.add(r.id());
+            }
+            if (blank(r.type())) {
+                problems.add(p + ".type: required");
+            }
+            if (blank(r.url())) {
+                problems.add(p + ".url: required (path for type 'local')");
+            }
+        }
+        if (c.deploy() != null && c.deploy().manifests() != null && !ids.contains(c.deploy().manifests().repo())) {
+            problems.add("deploy.manifests.repo: '" + c.deploy().manifests().repo()
+                    + "' is not one of the repo ids " + ids);
+        }
+    }
+
+    private void validateLimits(ProjectConfig c, List<String> problems) {
+        String tools = c.guardrails() == null ? null : c.guardrails().allowedTools();
+        if (tools != null && !tools.equals("readOnly")) {
+            problems.add("guardrails.allowedTools: only 'readOnly' is supported, got '" + tools + "'");
         }
         if (c.llm() != null && c.llm().maxTokensPerRun() != null && c.llm().maxTokensPerRun() <= 0) {
             problems.add("llm.maxTokensPerRun: must be positive");

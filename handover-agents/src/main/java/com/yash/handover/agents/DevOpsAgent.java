@@ -9,7 +9,6 @@ import com.yash.handover.adapters.repo.RepoSource;
 import com.yash.handover.config.ProjectConfig;
 import com.yash.handover.core.AgentRequest;
 import com.yash.handover.guardrails.Redactor;
-import com.yash.handover.core.AgentResult;
 import com.yash.handover.core.AgentRuntime;
 
 /**
@@ -73,22 +72,7 @@ public final class DevOpsAgent {
         }
         AgentRequest request = new AgentRequest("devops", model, SYSTEM_PROMPT,
                 "Write the section for this project.", List.of(tools), MAX_OUTPUT_TOKENS);
-        AgentResult result = runtime.run(request);
-        var checked = CitationChecker.check(result.text(), Set.of(), read, tools::lineCount);
-        var usage = result.usage();
-        if (repairCitations && !checked.unverified().isEmpty()) {
-            try {
-                AgentResult fixed = runtime.run(CitationRepair.request(request, "devops-repair", result.text(),
-                        checked.unverified()));
-                usage = usage == null ? fixed.usage() : usage.plus(fixed.usage());
-                var rechecked = CitationChecker.check(fixed.text(), Set.of(), read, tools::lineCount);
-                if (rechecked.unverified().size() <= checked.unverified().size()) { // keep the better one
-                    checked = rechecked;
-                }
-            } catch (RuntimeException e) {
-                // keep the first draft; its unverified citations stay flagged for the reviewer
-            }
-        }
-        return new SectionResult(TITLE, checked.text(), checked.verified(), checked.unverified(), usage);
+        return CitationRepair.run(runtime, request, TITLE, "devops-repair", repairCitations,
+                text -> CitationChecker.check(text, Set.of(), read, tools::lineCount));
     }
 }

@@ -15,23 +15,30 @@ final class LineCounts {
     }
 
     static Function<String, Integer> of(RepoSource repo) {
-        Set<String>[] files = new Set[1];
         Map<String, Integer> cache = new ConcurrentHashMap<>();
-        return path -> {
-            synchronized (files) {
-                if (files[0] == null) {
-                    files[0] = new HashSet<>(repo.listFiles());
-                }
-            }
-            if (!files[0].contains(path)) {
-                return null;
-            }
-            return cache.computeIfAbsent(path, p -> count(repo.readFile(p)));
-        };
+        FileList files = new FileList(repo);
+        return path -> files.contains(path) ? cache.computeIfAbsent(path, p -> count(repo.readFile(p))) : null;
     }
 
     /** Same counting as the chunker, so a chunk's end line is never beyond the file length. */
     static int count(String content) {
         return content.split("\\r?\\n", -1).length;
+    }
+
+    /** The repo's file list, loaded once on first use. */
+    private static final class FileList {
+        private final RepoSource repo;
+        private Set<String> files;
+
+        FileList(RepoSource repo) {
+            this.repo = repo;
+        }
+
+        synchronized boolean contains(String path) {
+            if (files == null) {
+                files = new HashSet<>(repo.listFiles());
+            }
+            return files.contains(path);
+        }
     }
 }

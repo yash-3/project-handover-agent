@@ -11,6 +11,7 @@ import java.util.List;
 
 import com.yash.handover.adapters.Adapters;
 import com.yash.handover.adapters.repo.RepoSource;
+import com.yash.handover.agents.KnowledgeAccess;
 import com.yash.handover.agents.QaAgent;
 import com.yash.handover.config.ProjectConfig;
 import com.yash.handover.core.RunUsage;
@@ -42,8 +43,8 @@ final class EvalCommand {
         RepoSource source = adapters.repos().create(first.type(), first);
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
         var runtime = Runtimes.guarded(config, usage);
-        QaAgent agent = new QaAgent(runtime, config.name(), config.llm().workerModel(), embedder, store, source,
-                TOP_K, Redactor.from(config.guardrails()));
+        QaAgent agent = new QaAgent(runtime, config.llm().workerModel(),
+                new KnowledgeAccess(config.name(), embedder, store, TOP_K), source, Redactor.from(config.guardrails()));
         EvalReport report = new EvalRunner(agent::ask,
                 judge ? new LlmJudge(runtime, config.llm().workerModel()) : null).run(cases, out::println);
 

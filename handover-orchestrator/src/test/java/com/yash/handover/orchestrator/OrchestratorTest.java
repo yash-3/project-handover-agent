@@ -63,7 +63,10 @@ class OrchestratorTest {
     void slowTaskTimesOutAsAGap() {
         List<Orchestrator.Task> tasks = List.of(new Orchestrator.Task("slow", "Slow", () -> {
             try {
-                Thread.sleep(30_000);
+                // never released: the task only ends when the orchestrator times it out and interrupts it
+                if (new CountDownLatch(1).await(30, TimeUnit.SECONDS)) {
+                    throw new AssertionError("the latch cannot be released");
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

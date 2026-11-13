@@ -7,6 +7,7 @@ import com.yash.handover.adapters.Adapters;
 import com.yash.handover.adapters.repo.RepoSource;
 import com.yash.handover.agents.CodeAgent;
 import com.yash.handover.agents.DevOpsAgent;
+import com.yash.handover.agents.KnowledgeAccess;
 import com.yash.handover.agents.SectionResult;
 import com.yash.handover.agents.TicketAgent;
 import com.yash.handover.config.ProjectConfig;
@@ -35,8 +36,9 @@ public final class TaskPlanner {
         Redactor redactor = Redactor.from(config.guardrails());
         List<Orchestrator.Task> tasks = new ArrayList<>();
 
-        tasks.add(new Orchestrator.Task("code agent", CodeAgent.TITLE, () -> new CodeAgent(runtime, config.name(),
-                llm.orchestratorModel(), embedder, store, repo(adapters, codeRepo), TOP_K, repair, redactor).run()));
+        tasks.add(new Orchestrator.Task("code agent", CodeAgent.TITLE, () -> new CodeAgent(runtime,
+                llm.orchestratorModel(), new KnowledgeAccess(config.name(), embedder, store, TOP_K),
+                repo(adapters, codeRepo), repair, redactor).run()));
 
         ProjectConfig.Manifests manifests = config.deploy() == null ? null : config.deploy().manifests();
         tasks.add(new Orchestrator.Task("devops agent", DevOpsAgent.TITLE, () -> {

@@ -41,7 +41,7 @@ class QaAgentTest {
         new KnowledgeIndexer(Chunker.defaults(), embedder, store).index("p", repo);
         AgentRuntime runtime = req -> new AgentResult(model.apply(req),
                 new UsageSummary(req.model(), 10, 5, 0, 0, null));
-        return new QaAgent(runtime, "p", "claude-haiku-5-5", embedder, store, repo, 3);
+        return new QaAgent(runtime, "claude-haiku-5-5", new KnowledgeAccess("p", embedder, store, 3), repo);
     }
 
     /** Fake model: calls the search tool the way Claude would, then cites what it found. */

@@ -9,8 +9,6 @@ import com.yash.handover.core.AgentResult;
 import com.yash.handover.core.AgentRuntime;
 import com.yash.handover.core.RepoTools;
 import com.yash.handover.guardrails.Redactor;
-import com.yash.handover.knowledge.ChunkStore;
-import com.yash.handover.knowledge.Embedder;
 import com.yash.handover.knowledge.KnowledgeSearch;
 import com.yash.handover.knowledge.SearchHit;
 
@@ -33,29 +31,22 @@ public final class QaAgent {
             - Be concise and concrete.""";
 
     private final AgentRuntime runtime;
-    private final String project;
     private final String model;
-    private final Embedder embedder;
-    private final ChunkStore store;
+    private final KnowledgeAccess knowledge;
     private final RepoSource repo;
-    private final int topK;
     private final Redactor redactor;
 
-    public QaAgent(AgentRuntime runtime, String project, String model, Embedder embedder,
-            ChunkStore store, RepoSource repo, int topK) {
-        this(runtime, project, model, embedder, store, repo, topK, Redactor.secretsOnly());
+    public QaAgent(AgentRuntime runtime, String model, KnowledgeAccess knowledge, RepoSource repo) {
+        this(runtime, model, knowledge, repo, Redactor.secretsOnly());
     }
 
-    public QaAgent(AgentRuntime runtime, String project, String model, Embedder embedder,
-            ChunkStore store, RepoSource repo, int topK, Redactor redactor) {
-        this.redactor = redactor;
+    public QaAgent(AgentRuntime runtime, String model, KnowledgeAccess knowledge, RepoSource repo,
+            Redactor redactor) {
         this.runtime = runtime;
-        this.project = project;
         this.model = model;
-        this.embedder = embedder;
-        this.store = store;
+        this.knowledge = knowledge;
         this.repo = repo;
-        this.topK = topK;
+        this.redactor = redactor;
     }
 
     public Answer ask(String question) {
@@ -64,8 +55,9 @@ public final class QaAgent {
         }
         Set<String> retrieved = new LinkedHashSet<>();
         Set<String> read = new LinkedHashSet<>();
-        KnowledgeSearch search = new KnowledgeSearch(project, embedder, store, topK,
-                hits -> hits.stream().map(SearchHit::chunk).forEach(c -> retrieved.add(c.citation())), redactor);
+        KnowledgeSearch search = new KnowledgeSearch(knowledge.project(), knowledge.embedder(), knowledge.store(),
+                knowledge.topK(), hits -> hits.stream().map(SearchHit::chunk).forEach(c -> retrieved.add(c.citation())),
+                redactor);
         AgentResult result = runtime.run(new AgentRequest("qa", model, SYSTEM_PROMPT, question,
                 List.of(search, new RepoTools(repo, read::add, redactor)), null));
         var checked = CitationChecker.check(result.text(), retrieved, read, LineCounts.of(repo));

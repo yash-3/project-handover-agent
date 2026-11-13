@@ -6,12 +6,9 @@ import java.util.Set;
 
 import com.yash.handover.adapters.repo.RepoSource;
 import com.yash.handover.core.AgentRequest;
-import com.yash.handover.core.AgentResult;
 import com.yash.handover.core.AgentRuntime;
 import com.yash.handover.core.RepoTools;
 import com.yash.handover.guardrails.Redactor;
-import com.yash.handover.knowledge.ChunkStore;
-import com.yash.handover.knowledge.Embedder;
 import com.yash.handover.knowledge.KnowledgeSearch;
 import com.yash.handover.knowledge.SearchHit;
 
@@ -39,64 +36,38 @@ public final class CodeAgent {
             - Be concrete and concise. Prefer bullets.""";
 
     private final AgentRuntime runtime;
-    private final String project;
     private final String model;
-    private final Embedder embedder;
-    private final ChunkStore store;
+    private final KnowledgeAccess knowledge;
     private final RepoSource repo;
-    private final int topK;
     private final boolean repairCitations;
     private final Redactor redactor;
 
-    public CodeAgent(AgentRuntime runtime, String project, String model, Embedder embedder,
-            ChunkStore store, RepoSource repo, int topK) {
-        this(runtime, project, model, embedder, store, repo, topK, false);
+    public CodeAgent(AgentRuntime runtime, String model, KnowledgeAccess knowledge, RepoSource repo) {
+        this(runtime, model, knowledge, repo, false, Redactor.secretsOnly());
     }
 
     /** {@code repairCitations}: if citations fail verification, run the agent once more to fix them (costs tokens). */
-    public CodeAgent(AgentRuntime runtime, String project, String model, Embedder embedder,
-            ChunkStore store, RepoSource repo, int topK, boolean repairCitations) {
-        this(runtime, project, model, embedder, store, repo, topK, repairCitations, Redactor.secretsOnly());
-    }
-
-    public CodeAgent(AgentRuntime runtime, String project, String model, Embedder embedder,
-            ChunkStore store, RepoSource repo, int topK, boolean repairCitations, Redactor redactor) {
-        this.redactor = redactor;
-        this.repairCitations = repairCitations;
+    public CodeAgent(AgentRuntime runtime, String model, KnowledgeAccess knowledge, RepoSource repo,
+            boolean repairCitations, Redactor redactor) {
         this.runtime = runtime;
-        this.project = project;
         this.model = model;
-        this.embedder = embedder;
-        this.store = store;
+        this.knowledge = knowledge;
         this.repo = repo;
-        this.topK = topK;
+        this.repairCitations = repairCitations;
+        this.redactor = redactor;
     }
 
     public SectionResult run() {
         Set<String> retrieved = new LinkedHashSet<>();
         Set<String> read = new LinkedHashSet<>();
-        KnowledgeSearch search = new KnowledgeSearch(project, embedder, store, topK,
-                hits -> hits.stream().map(SearchHit::chunk).forEach(c -> retrieved.add(c.citation())), redactor);
+        KnowledgeSearch search = new KnowledgeSearch(knowledge.project(), knowledge.embedder(), knowledge.store(),
+                knowledge.topK(), hits -> hits.stream().map(SearchHit::chunk).forEach(c -> retrieved.add(c.citation())),
+                redactor);
         var lines = LineCounts.of(repo);
         AgentRequest request = new AgentRequest("code", model, SYSTEM_PROMPT,
-                "Write the section for project '" + project + "'.",
+                "Write the section for project '" + knowledge.project() + "'.",
                 List.of(search, new RepoTools(repo, read::add, redactor)), MAX_OUTPUT_TOKENS);
-        AgentResult result = runtime.run(request);
-        var checked = CitationChecker.check(result.text(), retrieved, read, lines);
-        var usage = result.usage();
-        if (repairCitations && !checked.unverified().isEmpty()) {
-            try {
-                AgentResult fixed = runtime.run(CitationRepair.request(request, "code-repair", result.text(),
-                        checked.unverified()));
-                usage = usage == null ? fixed.usage() : usage.plus(fixed.usage());
-                var rechecked = CitationChecker.check(fixed.text(), retrieved, read, lines);
-                if (rechecked.unverified().size() <= checked.unverified().size()) { // keep the better one
-                    checked = rechecked;
-                }
-            } catch (RuntimeException e) {
-                // keep the first draft; its unverified citations stay flagged for the reviewer
-            }
-        }
-        return new SectionResult(TITLE, checked.text(), checked.verified(), checked.unverified(), usage);
+        return CitationRepair.run(runtime, request, TITLE, "code-repair", repairCitations,
+                text -> CitationChecker.check(text, retrieved, read, lines));
     }
 }
