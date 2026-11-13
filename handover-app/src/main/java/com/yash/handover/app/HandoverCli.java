@@ -9,6 +9,7 @@ import java.util.function.Function;
 import com.yash.handover.adapters.Adapters;
 import com.yash.handover.adapters.repo.RepoSource;
 import com.yash.handover.agents.Answer;
+import com.yash.handover.agents.CodeAgent;
 import com.yash.handover.agents.QaAgent;
 import com.yash.handover.agents.SectionResult;
 import com.yash.handover.agents.TicketAgent;
@@ -31,13 +32,14 @@ import com.yash.handover.knowledge.PgVectorChunkStore;
  * <pre>
  *   index &lt;project&gt;              read the project's repos and store them in pgvector
  *   ask   &lt;project&gt; &lt;question&gt;   answer a question from the indexed sources, with citations
+ *   code    &lt;project&gt;            write the "service overview and architecture" section from the code
  *   tickets &lt;project&gt;           write the "open work and known issues" section from the tracker
  * </pre>
  * Projects are read from {@code projects/<name>.yaml}.
  */
 public final class HandoverCli {
 
-    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  tickets <project>";
+    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  code <project>\n  tickets <project>";
     private static final int EMBEDDING_DIMS = 384;
     private static final int TOP_K = 6;
 
@@ -51,7 +53,7 @@ public final class HandoverCli {
     }
 
     static int run(String[] args, Function<String, String> env, PrintStream out, PrintStream err) {
-        if (args.length < 2 || !List.of("index", "ask", "tickets").contains(args[0])
+        if (args.length < 2 || !List.of("index", "ask", "code", "tickets").contains(args[0])
                 || (args[0].equals("ask") && args.length < 3)) {
             err.println(USAGE);
             return 2;
@@ -71,6 +73,9 @@ public final class HandoverCli {
             Adapters adapters = Adapters.defaults();
             if (args[0].equals("index")) {
                 return index(config, adapters, embedder, store, out);
+            }
+            if (args[0].equals("code")) {
+                return code(config, adapters, embedder, store, out);
             }
             return ask(config, adapters, embedder, store, String.join(" ", Arrays.copyOfRange(args, 2, args.length)), out);
         } catch (RuntimeException e) {
@@ -94,6 +99,25 @@ public final class HandoverCli {
             int n = indexer.index(config.name(), source);
             out.println("Indexed " + n + " chunks from repo '" + repo.id() + "'");
         }
+        return 0;
+    }
+
+    private static int code(ProjectConfig config, Adapters adapters, Embedder embedder, ChunkStore store,
+            PrintStream out) {
+        ProjectConfig.Repo first = config.repos().get(0); // the code agent explores the first repo
+        RepoSource source = adapters.repos().create(first.type(), first);
+        RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
+        var runtime = new SpringAiAgentRuntime(AnthropicModels.fromEnv(), usage, PriceTable.defaults());
+        SectionResult r = new CodeAgent(runtime, config.name(), config.llm().orchestratorModel(), embedder, store,
+                source, TOP_K).run();
+        out.println(r.markdown());
+        out.println();
+        out.println("Verified citations: " + r.verifiedRefs());
+        if (!r.fullyGrounded()) {
+            out.println("WARNING - citations the agent never saw (may be wrong): " + r.unverifiedRefs());
+        }
+        out.println("Tokens: " + usage.totalTokens() + ", est. cost USD: " + usage.totalCostUsd().toPlainString()
+                + (usage.costComplete() ? "" : " (lower bound)"));
         return 0;
     }
 

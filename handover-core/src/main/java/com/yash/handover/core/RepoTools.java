@@ -1,8 +1,8 @@
 package com.yash.handover.core;
 
 import java.util.List;
+import java.util.function.Consumer;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
@@ -12,13 +12,23 @@ import com.yash.handover.adapters.repo.RepoSource;
  * Read-only repository tools for agents. Failures come back as text so the model can recover,
  * and file content is capped to keep token usage bounded. Repo content is untrusted data.
  */
-@RequiredArgsConstructor
 public final class RepoTools {
 
     static final int MAX_LISTED_FILES = 500;
     static final int MAX_FILE_CHARS = 20_000;
 
     private final RepoSource repo;
+    private final Consumer<String> onRead;
+
+    public RepoTools(RepoSource repo) {
+        this(repo, path -> { });
+    }
+
+    /** {@code onRead} is told the path of every file successfully handed to the model. */
+    public RepoTools(RepoSource repo, Consumer<String> onRead) {
+        this.repo = repo;
+        this.onRead = onRead;
+    }
 
     @Tool(description = "List the files of the repository (repo-relative paths, one per line).")
     public String listFiles() {
@@ -33,6 +43,7 @@ public final class RepoTools {
     public String readFile(@ToolParam(description = "repo-relative path, e.g. src/Main.java") String path) {
         try {
             String content = repo.readFile(path);
+            onRead.accept(path);
             return content.length() > MAX_FILE_CHARS
                     ? content.substring(0, MAX_FILE_CHARS) + "\n... (truncated at " + MAX_FILE_CHARS + " characters)"
                     : content;
