@@ -10,6 +10,9 @@ import com.yash.handover.adapters.Adapters;
 import com.yash.handover.adapters.repo.RepoSource;
 import com.yash.handover.agents.Answer;
 import com.yash.handover.agents.QaAgent;
+import com.yash.handover.agents.SectionResult;
+import com.yash.handover.agents.TicketAgent;
+import com.yash.handover.adapters.tickets.TicketSource;
 import com.yash.handover.config.ConfigLoader;
 import com.yash.handover.config.ProjectConfig;
 import com.yash.handover.core.AnthropicModels;
@@ -28,12 +31,13 @@ import com.yash.handover.knowledge.PgVectorChunkStore;
  * <pre>
  *   index &lt;project&gt;              read the project's repos and store them in pgvector
  *   ask   &lt;project&gt; &lt;question&gt;   answer a question from the indexed sources, with citations
+ *   tickets &lt;project&gt;           write the "open work and known issues" section from the tracker
  * </pre>
  * Projects are read from {@code projects/<name>.yaml}.
  */
 public final class HandoverCli {
 
-    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>";
+    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  tickets <project>";
     private static final int EMBEDDING_DIMS = 384;
     private static final int TOP_K = 6;
 
@@ -47,7 +51,7 @@ public final class HandoverCli {
     }
 
     static int run(String[] args, Function<String, String> env, PrintStream out, PrintStream err) {
-        if (args.length < 2 || !List.of("index", "ask").contains(args[0])
+        if (args.length < 2 || !List.of("index", "ask", "tickets").contains(args[0])
                 || (args[0].equals("ask") && args.length < 3)) {
             err.println(USAGE);
             return 2;
@@ -59,6 +63,9 @@ public final class HandoverCli {
         }
         try {
             ProjectConfig config = new ConfigLoader(env).load(Path.of("projects", project + ".yaml"));
+            if (args[0].equals("tickets")) { // needs no database or embeddings
+                return tickets(config, Adapters.defaults(), out);
+            }
             ChunkStore store = new PgVectorChunkStore(dataSource(AppSettings.fromEnv(env)), EMBEDDING_DIMS);
             Embedder embedder = LocalEmbedders.onnx();
             Adapters adapters = Adapters.defaults();
@@ -87,6 +94,25 @@ public final class HandoverCli {
             int n = indexer.index(config.name(), source);
             out.println("Indexed " + n + " chunks from repo '" + repo.id() + "'");
         }
+        return 0;
+    }
+
+    private static int tickets(ProjectConfig config, Adapters adapters, PrintStream out) {
+        if (config.tickets() == null) {
+            throw new IllegalStateException("Project '" + config.name() + "' has no tickets section in its config");
+        }
+        TicketSource source = adapters.tickets().create(config.tickets().type(), config.tickets());
+        RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
+        var runtime = new SpringAiAgentRuntime(AnthropicModels.fromEnv(), usage, PriceTable.defaults());
+        SectionResult r = new TicketAgent(runtime, config.llm().workerModel(), source).run();
+        out.println(r.markdown());
+        out.println();
+        out.println("Verified ticket refs: " + r.verifiedRefs());
+        if (!r.fullyGrounded()) {
+            out.println("WARNING - refs not found in the tracker (may be invented): " + r.unverifiedRefs());
+        }
+        out.println("Tokens: " + usage.totalTokens() + ", est. cost USD: " + usage.totalCostUsd().toPlainString()
+                + (usage.costComplete() ? "" : " (lower bound)"));
         return 0;
     }
 
