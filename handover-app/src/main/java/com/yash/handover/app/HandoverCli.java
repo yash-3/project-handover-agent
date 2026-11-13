@@ -36,13 +36,14 @@ import com.yash.handover.knowledge.PgVectorChunkStore;
  *   ask   &lt;project&gt; &lt;question&gt;   answer a question from the indexed sources, with citations
  *   code    &lt;project&gt;            write the "service overview and architecture" section from the code
  *   devops  &lt;project&gt;            write the "build, deployment and operations" section
+ *   draft   &lt;project&gt;            run all agents and save the handover as handover-DRAFT.md
  *   tickets &lt;project&gt;           write the "open work and known issues" section from the tracker
  * </pre>
  * Projects are read from {@code projects/<name>.yaml}.
  */
 public final class HandoverCli {
 
-    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  code <project>\n  devops <project>\n  tickets <project>";
+    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  code <project>\n  devops <project>\n  draft <project>\n  tickets <project>";
     private static final int EMBEDDING_DIMS = 384;
     private static final int TOP_K = 6;
 
@@ -56,7 +57,7 @@ public final class HandoverCli {
     }
 
     static int run(String[] args, Function<String, String> env, PrintStream out, PrintStream err) {
-        if (args.length < 2 || !List.of("index", "ask", "code", "devops", "tickets").contains(args[0])
+        if (args.length < 2 || !List.of("index", "ask", "code", "devops", "draft", "tickets").contains(args[0])
                 || (args[0].equals("ask") && args.length < 3)) {
             err.println(USAGE);
             return 2;
@@ -79,6 +80,9 @@ public final class HandoverCli {
             Adapters adapters = Adapters.defaults();
             if (args[0].equals("index")) {
                 return index(config, adapters, embedder, store, out);
+            }
+            if (args[0].equals("draft")) {
+                return DraftCommand.run(config, adapters, embedder, store, out);
             }
             if (args[0].equals("code")) {
                 return code(config, adapters, embedder, store, out);
