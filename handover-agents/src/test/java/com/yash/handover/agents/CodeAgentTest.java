@@ -71,4 +71,66 @@ class CodeAgentTest {
         assertThat(seen[0].maxOutputTokens()).isEqualTo(CodeAgent.MAX_OUTPUT_TOKENS);
         assertThat(seen[0].tools()).hasSize(2);
     }
+
+    private SectionResult runCounting(boolean repair, java.util.concurrent.atomic.AtomicInteger calls,
+            Function<AgentRequest, String> model) {
+        new KnowledgeIndexer(Chunker.defaults(), embedder, store).index("p", repo);
+        return new CodeAgent(req -> {
+            calls.incrementAndGet();
+            return new AgentResult(model.apply(req), new UsageSummary(req.model(), 100, 10, 0, 0, null));
+        }, "p", "claude-sonnet-5-5", embedder, store, repo, 3, repair).run();
+    }
+
+    private static String firstThenFixed(AgentRequest req) {
+        KnowledgeSearch search = (KnowledgeSearch) req.tools().get(0);
+        search.searchKnowledge("charge card");
+        return req.agentName().equals("code-repair")
+                ? "Charges cards [app.py:1-3]."
+                : "Charges cards [app.py:1-3] and queue [worker.py:4-9].";
+    }
+
+    @Test
+    void repairOffRunsTheAgentOnceAndKeepsTheFlag() {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        SectionResult r = runCounting(false, calls, CodeAgentTest::firstThenFixed);
+        assertThat(calls.get()).isEqualTo(1);
+        assertThat(r.unverifiedRefs()).containsExactly("worker.py:4-9");
+    }
+
+    @Test
+    void repairOnRerunsOnceWithTheFailingCitationsAndKeepsTheBetterResult() {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        AgentRequest[] repairReq = new AgentRequest[1];
+        SectionResult r = runCounting(true, calls, req -> {
+            if (req.agentName().equals("code-repair")) {
+                repairReq[0] = req;
+            }
+            return firstThenFixed(req);
+        });
+        assertThat(calls.get()).isEqualTo(2);
+        assertThat(repairReq[0].userPrompt()).contains("[worker.py:4-9]").contains("PREVIOUS DRAFT")
+                .contains("Charges cards");
+        assertThat(r.fullyGrounded()).isTrue();
+        assertThat(r.usage().totalTokens()).isEqualTo(220); // both runs counted
+    }
+
+    @Test
+    void repairNotCalledWhenAlreadyGroundedAndFailedRepairKeepsFirstDraft() {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        runCounting(true, calls, req -> {
+            ((KnowledgeSearch) req.tools().get(0)).searchKnowledge("charge card");
+            return "ok [app.py:1-3]";
+        });
+        assertThat(calls.get()).isEqualTo(1);
+
+        var calls2 = new java.util.concurrent.atomic.AtomicInteger();
+        SectionResult r = runCounting(true, calls2, req -> {
+            if (req.agentName().equals("code-repair")) {
+                throw new IllegalStateException("model down");
+            }
+            return firstThenFixed(req);
+        });
+        assertThat(calls2.get()).isEqualTo(2);
+        assertThat(r.unverifiedRefs()).containsExactly("worker.py:4-9");
+    }
 }

@@ -53,7 +53,9 @@ public final class DocsAgent {
     static String reviewNotes(List<SectionResult> sections) {
         StringBuilder sb = new StringBuilder();
         for (SectionResult s : sections) {
-            if (!s.fullyGrounded()) {
+            if (s.failed()) {
+                sb.append("- **").append(s.title()).append("**: could not be generated. Re-run or write it by hand.\n");
+            } else if (!s.fullyGrounded()) {
                 sb.append("- **").append(s.title()).append("**: these references were not seen by the agent and may be wrong: ")
                         .append(String.join(", ", s.unverifiedRefs())).append('\n');
             }

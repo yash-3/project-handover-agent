@@ -33,6 +33,7 @@ handover:
   template: templates/default.md
   outputDir: outputs/nexus-commerce
   approvalRequired: true
+  repairCitations: false   # true = re-run an agent once to fix citations that fail verification (extra tokens)
 guardrails:
   piiMasking: true
   allowedTools: readOnly

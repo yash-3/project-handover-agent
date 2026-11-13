@@ -83,4 +83,26 @@ class DevOpsAgentTest {
         assertThat(seen[0].systemPrompt()).contains("Never write secret values").contains("untrusted");
         assertThat(seen[0].tools()).hasSize(1).first().isInstanceOf(DevOpsTools.class);
     }
+
+    @Test
+    void repairRerunsDevOpsAgentOnlyWhenEnabledAndCitationsFail() {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.function.Function<Boolean, SectionResult> go = repair -> new DevOpsAgent(req -> {
+            calls.incrementAndGet();
+            ((DevOpsTools) req.tools().get(0)).readDeployFile("k8s/deploy.yaml");
+            String text = req.agentName().equals("devops-repair")
+                    ? "Deployment [k8s/deploy.yaml:1-3]."
+                    : "Deployment [k8s/deploy.yaml:1-99].";
+            return new AgentResult(text, new UsageSummary("m", 5, 5, 0, 0, null));
+        }, "m", repo, manifests, ci, repair).run();
+
+        SectionResult off = go.apply(false);
+        assertThat(calls.get()).isEqualTo(1);
+        assertThat(off.unverifiedRefs()).containsExactly("k8s/deploy.yaml:1-99"); // beyond the real 3 lines
+
+        calls.set(0);
+        SectionResult on = go.apply(true);
+        assertThat(calls.get()).isEqualTo(2);
+        assertThat(on.fullyGrounded()).isTrue();
+    }
 }

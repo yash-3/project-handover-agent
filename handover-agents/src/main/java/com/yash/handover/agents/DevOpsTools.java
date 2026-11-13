@@ -77,6 +77,22 @@ public final class DevOpsTools {
                 .orElse("ERROR: no pipeline at '" + path + "'. Use a path from listPipelines.");
     }
 
+    /** Number of lines of a deployment file or pipeline, or null if it is neither (for citation checks). */
+    Integer lineCount(String path) {
+        var pipeline = pipelines.stream().filter(p -> p.path().equals(path)).findFirst();
+        if (pipeline.isPresent()) {
+            return LineCounts.count(pipeline.get().content());
+        }
+        if (!deployFiles().contains(path)) {
+            return null;
+        }
+        try {
+            return LineCounts.count(repo.readFile(path));
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     private static String cap(String s) {
         return s.length() > MAX_CHARS ? s.substring(0, MAX_CHARS) + "\n... (truncated at " + MAX_CHARS + " characters)" : s;
     }

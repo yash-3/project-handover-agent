@@ -107,5 +107,6 @@ class ConfigLoaderTest {
         ConfigLoader l = new ConfigLoader(k -> "dummy");
         Path sample = Path.of("..", "projects", "nexus-commerce.yaml");
         assertThat(l.load(sample).name()).isEqualTo("nexus-commerce");
+        assertThat(l.load(sample).handover().repairCitations()).isFalse();
     }
 }

@@ -51,7 +51,11 @@ public record ProjectConfig(
     public record Llm(String workerModel, String orchestratorModel, Integer maxTokensPerRun) {
     }
 
-    public record Handover(String template, String outputDir, Boolean approvalRequired) {
+    /**
+     * @param repairCitations when true, an agent whose citations fail verification is run once more to fix
+     *                        them (costs extra tokens); null or false = off
+     */
+    public record Handover(String template, String outputDir, Boolean approvalRequired, Boolean repairCitations) {
     }
 
     public record Guardrails(Boolean piiMasking, String allowedTools) {

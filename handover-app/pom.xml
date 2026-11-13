@@ -13,7 +13,7 @@
   <dependencies>
     <dependency>
       <groupId>com.yash.handover</groupId>
-      <artifactId>handover-agents</artifactId>
+      <artifactId>handover-orchestrator</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>

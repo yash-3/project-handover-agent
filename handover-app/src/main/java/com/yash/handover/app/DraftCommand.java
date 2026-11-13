@@ -3,21 +3,12 @@ package com.yash.handover.app;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
 
 import com.yash.handover.adapters.Adapters;
-import com.yash.handover.adapters.ci.CISource;
-import com.yash.handover.adapters.repo.RepoSource;
-import com.yash.handover.agents.CodeAgent;
-import com.yash.handover.agents.DevOpsAgent;
 import com.yash.handover.agents.DocsAgent;
-import com.yash.handover.agents.HandoverDocument;
 import com.yash.handover.agents.HandoverTemplate;
-import com.yash.handover.agents.HandoverWriter;
-import com.yash.handover.agents.SectionResult;
-import com.yash.handover.agents.TicketAgent;
 import com.yash.handover.config.ProjectConfig;
 import com.yash.handover.core.AgentRuntime;
 import com.yash.handover.core.AnthropicModels;
@@ -26,15 +17,15 @@ import com.yash.handover.core.RunUsage;
 import com.yash.handover.core.SpringAiAgentRuntime;
 import com.yash.handover.knowledge.ChunkStore;
 import com.yash.handover.knowledge.Embedder;
+import com.yash.handover.orchestrator.HandoverPipeline;
+import com.yash.handover.orchestrator.Orchestrator;
+import com.yash.handover.orchestrator.TaskPlanner;
 
 /**
- * Runs the Code, DevOps and Ticket agents one after another, then the Docs agent, and saves
- * {@code handover-DRAFT.md}. Sequential on purpose for now; the orchestrator step replaces this
- * with parallel runs and gap handling. One shared {@link RunUsage} enforces the token budget.
+ * Runs the whole handover through the orchestrator (agents in parallel, then the Docs agent) and
+ * saves {@code handover-DRAFT.md}. One shared {@link RunUsage} enforces the token budget.
  */
 final class DraftCommand {
-
-    private static final int TOP_K = 6;
 
     private DraftCommand() {
     }
@@ -47,40 +38,25 @@ final class DraftCommand {
         HandoverTemplate template = new HandoverTemplate(read(Path.of(handover.template())));
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
         AgentRuntime runtime = new SpringAiAgentRuntime(AnthropicModels.fromEnv(), usage, PriceTable.defaults());
-        ProjectConfig.Llm llm = config.llm();
 
-        List<SectionResult> sections = new ArrayList<>();
-        ProjectConfig.Repo codeRepo = config.repos().get(0);
-        RepoSource code = adapters.repos().create(codeRepo.type(), codeRepo);
-        out.println("Writing: service overview...");
-        sections.add(new CodeAgent(runtime, config.name(), llm.orchestratorModel(), embedder, store, code, TOP_K).run());
+        HandoverPipeline pipeline = new HandoverPipeline(new Orchestrator(Duration.ofMinutes(15)),
+                new DocsAgent(runtime, config.llm().orchestratorModel()));
+        boolean approvalRequired = !Boolean.FALSE.equals(handover.approvalRequired());
+        var result = pipeline.run(config.name(), template, TaskPlanner.plan(config, adapters, runtime, embedder, store),
+                Path.of(handover.outputDir()), approvalRequired, LocalDate.now(), out::println);
 
-        ProjectConfig.Manifests manifests = config.deploy() == null ? null : config.deploy().manifests();
-        ProjectConfig.Repo deployRepo = manifests == null ? codeRepo : config.repos().stream()
-                .filter(r -> r.id().equals(manifests.repo())).findFirst().orElse(codeRepo);
-        CISource ci = config.ci() == null ? null : adapters.ci().create(config.ci().type(), config.ci());
-        out.println("Writing: build and deployment...");
-        sections.add(new DevOpsAgent(runtime, llm.orchestratorModel(),
-                adapters.repos().create(deployRepo.type(), deployRepo), manifests, ci).run());
-
-        if (config.tickets() != null) {
-            out.println("Writing: open work and known issues...");
-            sections.add(new TicketAgent(runtime, llm.workerModel(),
-                    adapters.tickets().create(config.tickets().type(), config.tickets())).run());
+        out.println("Draft written: " + result.draft());
+        if (result.failedSections() > 0) {
+            out.println("WARNING - " + result.failedSections() + " section(s) could not be generated; see the draft.");
         }
-
-        out.println("Assembling the document...");
-        HandoverDocument doc = new DocsAgent(runtime, llm.orchestratorModel())
-                .compose(config.name(), template, sections, LocalDate.now());
-        Path file = HandoverWriter.writeDraft(Path.of(handover.outputDir()), doc.markdown());
-
-        out.println("Draft written: " + file);
-        if (doc.needsReview()) {
-            out.println("WARNING - some references were never seen by the agents; see 'Review notes' in the draft.");
+        if (result.document().needsReview()) {
+            out.println("WARNING - some references were not verified; see 'Review notes' in the draft.");
         }
-        out.println("It is a DRAFT: " + (Boolean.FALSE.equals(handover.approvalRequired())
-                ? "approval is not required by the config, but review it anyway."
-                : "a human must review and approve it before use."));
+        if (approvalRequired) {
+            out.println("Review it, then approve with: approve " + config.name() + " <your name>");
+        } else {
+            out.println("Auto-approved (approvalRequired=false): " + result.approved());
+        }
         out.println("Tokens: " + usage.totalTokens() + ", est. cost USD: " + usage.totalCostUsd().toPlainString()
                 + (usage.costComplete() ? "" : " (lower bound)"));
         return 0;

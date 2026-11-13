@@ -20,6 +20,8 @@ import com.yash.handover.core.AgentRuntime;
  */
 public final class TicketAgent {
 
+    public static final String TITLE = "Open work and known issues";
+
     static final String SYSTEM_PROMPT = """
             You write the "Open work and known issues" section of a project handover document for the person taking over.
             Rules:
@@ -64,6 +66,6 @@ public final class TicketAgent {
                 (known.contains(id) ? verified : unverified).add(id);
             }
         }
-        return new SectionResult("Open work and known issues", result.text(), verified, unverified, result.usage());
+        return new SectionResult(TITLE, result.text(), verified, unverified, result.usage());
     }
 }

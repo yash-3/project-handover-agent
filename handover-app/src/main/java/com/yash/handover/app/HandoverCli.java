@@ -28,6 +28,7 @@ import com.yash.handover.knowledge.Embedder;
 import com.yash.handover.knowledge.KnowledgeIndexer;
 import com.yash.handover.knowledge.LocalEmbedders;
 import com.yash.handover.knowledge.PgVectorChunkStore;
+import com.yash.handover.orchestrator.Approval;
 
 /**
  * Command line entry point (run from the repository root, with your .env loaded):
@@ -37,13 +38,14 @@ import com.yash.handover.knowledge.PgVectorChunkStore;
  *   code    &lt;project&gt;            write the "service overview and architecture" section from the code
  *   devops  &lt;project&gt;            write the "build, deployment and operations" section
  *   draft   &lt;project&gt;            run all agents and save the handover as handover-DRAFT.md
+ *   approve &lt;project&gt; &lt;name&gt;     approve the reviewed draft as handover.md (audited)
  *   tickets &lt;project&gt;           write the "open work and known issues" section from the tracker
  * </pre>
  * Projects are read from {@code projects/<name>.yaml}.
  */
 public final class HandoverCli {
 
-    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  code <project>\n  devops <project>\n  draft <project>\n  tickets <project>";
+    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  code <project>\n  devops <project>\n  draft <project>\n  approve <project> <your name>\n  tickets <project>";
     private static final int EMBEDDING_DIMS = 384;
     private static final int TOP_K = 6;
 
@@ -57,8 +59,8 @@ public final class HandoverCli {
     }
 
     static int run(String[] args, Function<String, String> env, PrintStream out, PrintStream err) {
-        if (args.length < 2 || !List.of("index", "ask", "code", "devops", "draft", "tickets").contains(args[0])
-                || (args[0].equals("ask") && args.length < 3)) {
+        if (args.length < 2 || !List.of("index", "ask", "code", "devops", "draft", "approve", "tickets").contains(args[0])
+                || ((args[0].equals("ask") || args[0].equals("approve")) && args.length < 3)) {
             err.println(USAGE);
             return 2;
         }
@@ -69,6 +71,9 @@ public final class HandoverCli {
         }
         try {
             ProjectConfig config = new ConfigLoader(env).load(Path.of("projects", project + ".yaml"));
+            if (args[0].equals("approve")) { // needs only the config
+                return approve(config, String.join(" ", Arrays.copyOfRange(args, 2, args.length)), out);
+            }
             if (args[0].equals("devops")) { // needs no database or embeddings
                 return devops(config, Adapters.defaults(), out);
             }
@@ -119,7 +124,7 @@ public final class HandoverCli {
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
         var runtime = new SpringAiAgentRuntime(AnthropicModels.fromEnv(), usage, PriceTable.defaults());
         SectionResult r = new CodeAgent(runtime, config.name(), config.llm().orchestratorModel(), embedder, store,
-                source, TOP_K).run();
+                source, TOP_K, repairFlag(config)).run();
         out.println(r.markdown());
         out.println();
         out.println("Verified citations: " + r.verifiedRefs());
@@ -128,6 +133,22 @@ public final class HandoverCli {
         }
         out.println("Tokens: " + usage.totalTokens() + ", est. cost USD: " + usage.totalCostUsd().toPlainString()
                 + (usage.costComplete() ? "" : " (lower bound)"));
+        return 0;
+    }
+
+    private static boolean repairFlag(ProjectConfig config) {
+        return config.handover() != null && Boolean.TRUE.equals(config.handover().repairCitations());
+    }
+
+    private static int approve(ProjectConfig config, String approver, PrintStream out) {
+        if (config.handover() == null || config.handover().outputDir() == null) {
+            throw new IllegalStateException("handover.outputDir must be set in the project config");
+        }
+        var r = Approval.approve(Path.of(config.handover().outputDir()), approver, java.time.LocalDate.now());
+        out.println("Approved: " + r.file());
+        if (r.draftNeededReview()) {
+            out.println("Note: the draft had unverified references or failed sections when it was created.");
+        }
         return 0;
     }
 
@@ -140,7 +161,7 @@ public final class HandoverCli {
         CISource ci = config.ci() == null ? null : adapters.ci().create(config.ci().type(), config.ci());
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
         var runtime = new SpringAiAgentRuntime(AnthropicModels.fromEnv(), usage, PriceTable.defaults());
-        SectionResult r = new DevOpsAgent(runtime, config.llm().orchestratorModel(), source, manifests, ci).run();
+        SectionResult r = new DevOpsAgent(runtime, config.llm().orchestratorModel(), source, manifests, ci, repairFlag(config)).run();
         out.println(r.markdown());
         out.println();
         out.println("Verified citations: " + r.verifiedRefs());
