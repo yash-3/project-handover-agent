@@ -59,4 +59,14 @@ class TicketAgentTest {
         assertThat(seen[0].tools()).hasSize(1).first().isInstanceOf(TicketTools.class);
         assertThat(seen[0].userPrompt()).contains("2 tickets");
     }
+
+    @Test
+    void ticketTextIsRedactedBeforeTheModelSeesIt() {
+        TicketSource leaky = () -> List.of(new Ticket("#5", "Reset for bob@corp.io", "open", "bug", List.of(),
+                "password: hunter2\ncall +44 20 7946 0958", "u"));
+        TicketTools tools = new TicketTools(leaky, com.yash.handover.guardrails.Redactor.withPii());
+        assertThat(tools.listTickets("all")).contains("[email]").doesNotContain("bob@corp.io");
+        assertThat(tools.getTicket("#5")).contains("password: ****").contains("[phone]")
+                .doesNotContain("hunter2").doesNotContain("7946");
+    }
 }

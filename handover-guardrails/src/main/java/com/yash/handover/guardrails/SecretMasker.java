@@ -1,4 +1,4 @@
-package com.yash.handover.agents;
+package com.yash.handover.guardrails;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
  * pipelines often hold credentials; the handover needs their names, never their values. This is a
  * safety net, not a guarantee (a dedicated guardrails module will extend it).
  */
-final class SecretMasker {
+public final class SecretMasker {
 
     private static final String MASK = "****";
 
@@ -25,11 +25,19 @@ final class SecretMasker {
     private SecretMasker() {
     }
 
-    static String mask(String text) {
+    /** Masks secret values. Line count is preserved, so line numbers in citations stay valid. */
+    public static String mask(String text) {
         if (text == null) {
             return "";
         }
-        String out = PRIVATE_KEY.matcher(text).replaceAll(MASK);
+        Matcher pk = PRIVATE_KEY.matcher(text);
+        StringBuilder keyless = new StringBuilder();
+        while (pk.find()) {
+            long lines = pk.group().chars().filter(c -> c == '\n').count();
+            pk.appendReplacement(keyless, Matcher.quoteReplacement(MASK + "\n".repeat((int) lines)));
+        }
+        pk.appendTail(keyless);
+        String out = keyless.toString();
         out = TOKEN_SHAPES.matcher(out).replaceAll(MASK);
         Matcher m = KEY_VALUE.matcher(out);
         StringBuilder sb = new StringBuilder();

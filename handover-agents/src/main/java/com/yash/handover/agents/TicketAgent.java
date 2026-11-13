@@ -12,6 +12,7 @@ import com.yash.handover.adapters.tickets.TicketSource;
 import com.yash.handover.core.AgentRequest;
 import com.yash.handover.core.AgentResult;
 import com.yash.handover.core.AgentRuntime;
+import com.yash.handover.guardrails.Redactor;
 
 /**
  * Writes the "Open work and known issues" section of the handover from the project's tickets.
@@ -38,15 +39,21 @@ public final class TicketAgent {
     private final AgentRuntime runtime;
     private final String model;
     private final TicketSource source;
+    private final Redactor redactor;
 
     public TicketAgent(AgentRuntime runtime, String model, TicketSource source) {
+        this(runtime, model, source, Redactor.secretsOnly());
+    }
+
+    public TicketAgent(AgentRuntime runtime, String model, TicketSource source, Redactor redactor) {
+        this.redactor = redactor;
         this.runtime = runtime;
         this.model = model;
         this.source = source;
     }
 
     public SectionResult run() {
-        TicketTools tools = new TicketTools(source);
+        TicketTools tools = new TicketTools(source, redactor);
         AgentResult result = runtime.run(new AgentRequest("ticket", model, SYSTEM_PROMPT,
                 "Write the section for this project. It has " + tools.all().size() + " tickets in total.",
                 List.of(tools), null));

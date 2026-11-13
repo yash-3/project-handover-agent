@@ -186,6 +186,10 @@ public final class ConfigLoader {
         if (c.tickets() != null && (blank(c.tickets().type()) || blank(c.tickets().url()))) {
             problems.add("tickets: type and url are required when tickets is present");
         }
+        if (c.guardrails() != null && c.guardrails().allowedTools() != null
+                && !c.guardrails().allowedTools().equals("readOnly")) {
+            problems.add("guardrails.allowedTools: only 'readOnly' is supported, got '" + c.guardrails().allowedTools() + "'");
+        }
         if (c.llm() != null && c.llm().maxTokensPerRun() != null && c.llm().maxTokensPerRun() <= 0) {
             problems.add("llm.maxTokensPerRun: must be positive");
         }

@@ -34,4 +34,5 @@ Stack: Java 21, Spring Boot 4.1.2, Spring AI 2.0.2 (see `docs/plan.md` and the a
 - [x] Docs agent: fills `templates/default.md` (summary by the model, sections inserted verbatim), lists unverified references under Review notes, saves `handover-DRAFT.md`; `draft <project>` runs everything
 - [x] `handover-orchestrator` module: agents run in parallel, a failed agent becomes an explicit gap, tasks planned from config, `approve` step stamps `handover.md`, audit log (`audit.log`)
 - [x] Citation checks: cited files and line ranges are validated against the real repo; optional `handover.repairCitations: true` re-runs an agent once to fix failed citations (extra tokens, off by default)
-- [ ] `guardrails`, `observability`, `evals`, REST API
+- [x] `handover-guardrails` module: secret and PII masking applied at index time, in every tool output and on agent answers (`piiMasking`, default on); `allowedTools: readOnly` enforced by a tool allowlist; prompt-injection warnings at index time
+- [ ] `observability`, `evals`, REST API

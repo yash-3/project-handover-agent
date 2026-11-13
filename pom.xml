@@ -11,6 +11,7 @@
 
   <modules>
     <module>handover-config</module>
+    <module>handover-guardrails</module>
     <module>handover-adapters</module>
     <module>handover-core</module>
     <module>handover-knowledge</module>

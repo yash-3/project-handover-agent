@@ -11,10 +11,7 @@ import com.yash.handover.agents.DocsAgent;
 import com.yash.handover.agents.HandoverTemplate;
 import com.yash.handover.config.ProjectConfig;
 import com.yash.handover.core.AgentRuntime;
-import com.yash.handover.core.AnthropicModels;
-import com.yash.handover.core.PriceTable;
 import com.yash.handover.core.RunUsage;
-import com.yash.handover.core.SpringAiAgentRuntime;
 import com.yash.handover.knowledge.ChunkStore;
 import com.yash.handover.knowledge.Embedder;
 import com.yash.handover.orchestrator.HandoverPipeline;
@@ -37,7 +34,7 @@ final class DraftCommand {
         }
         HandoverTemplate template = new HandoverTemplate(read(Path.of(handover.template())));
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
-        AgentRuntime runtime = new SpringAiAgentRuntime(AnthropicModels.fromEnv(), usage, PriceTable.defaults());
+        AgentRuntime runtime = Runtimes.guarded(config, usage);
 
         HandoverPipeline pipeline = new HandoverPipeline(new Orchestrator(Duration.ofMinutes(15)),
                 new DocsAgent(runtime, config.llm().orchestratorModel()));

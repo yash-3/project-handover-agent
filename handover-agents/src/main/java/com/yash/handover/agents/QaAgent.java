@@ -8,6 +8,7 @@ import com.yash.handover.core.AgentRequest;
 import com.yash.handover.core.AgentResult;
 import com.yash.handover.core.AgentRuntime;
 import com.yash.handover.core.RepoTools;
+import com.yash.handover.guardrails.Redactor;
 import com.yash.handover.knowledge.ChunkStore;
 import com.yash.handover.knowledge.Embedder;
 import com.yash.handover.knowledge.KnowledgeSearch;
@@ -38,9 +39,16 @@ public final class QaAgent {
     private final ChunkStore store;
     private final RepoSource repo;
     private final int topK;
+    private final Redactor redactor;
 
     public QaAgent(AgentRuntime runtime, String project, String model, Embedder embedder,
             ChunkStore store, RepoSource repo, int topK) {
+        this(runtime, project, model, embedder, store, repo, topK, Redactor.secretsOnly());
+    }
+
+    public QaAgent(AgentRuntime runtime, String project, String model, Embedder embedder,
+            ChunkStore store, RepoSource repo, int topK, Redactor redactor) {
+        this.redactor = redactor;
         this.runtime = runtime;
         this.project = project;
         this.model = model;
@@ -57,9 +65,9 @@ public final class QaAgent {
         Set<String> retrieved = new LinkedHashSet<>();
         Set<String> read = new LinkedHashSet<>();
         KnowledgeSearch search = new KnowledgeSearch(project, embedder, store, topK,
-                hits -> hits.stream().map(SearchHit::chunk).forEach(c -> retrieved.add(c.citation())));
+                hits -> hits.stream().map(SearchHit::chunk).forEach(c -> retrieved.add(c.citation())), redactor);
         AgentResult result = runtime.run(new AgentRequest("qa", model, SYSTEM_PROMPT, question,
-                List.of(search, new RepoTools(repo, read::add)), null));
+                List.of(search, new RepoTools(repo, read::add, redactor)), null));
         var checked = CitationChecker.check(result.text(), retrieved, read, LineCounts.of(repo));
         return new Answer(checked.text(), checked.verified(), checked.unverified(), result.usage());
     }

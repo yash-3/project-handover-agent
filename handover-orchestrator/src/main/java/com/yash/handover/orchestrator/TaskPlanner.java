@@ -11,6 +11,7 @@ import com.yash.handover.agents.SectionResult;
 import com.yash.handover.agents.TicketAgent;
 import com.yash.handover.config.ProjectConfig;
 import com.yash.handover.core.AgentRuntime;
+import com.yash.handover.guardrails.Redactor;
 import com.yash.handover.knowledge.ChunkStore;
 import com.yash.handover.knowledge.Embedder;
 
@@ -31,17 +32,18 @@ public final class TaskPlanner {
         ProjectConfig.Llm llm = config.llm();
         ProjectConfig.Repo codeRepo = config.repos().get(0);
         boolean repair = config.handover() != null && Boolean.TRUE.equals(config.handover().repairCitations());
+        Redactor redactor = Redactor.from(config.guardrails());
         List<Orchestrator.Task> tasks = new ArrayList<>();
 
         tasks.add(new Orchestrator.Task("code agent", CodeAgent.TITLE, () -> new CodeAgent(runtime, config.name(),
-                llm.orchestratorModel(), embedder, store, repo(adapters, codeRepo), TOP_K, repair).run()));
+                llm.orchestratorModel(), embedder, store, repo(adapters, codeRepo), TOP_K, repair, redactor).run()));
 
         ProjectConfig.Manifests manifests = config.deploy() == null ? null : config.deploy().manifests();
         tasks.add(new Orchestrator.Task("devops agent", DevOpsAgent.TITLE, () -> {
             ProjectConfig.Repo deployRepo = manifests == null ? codeRepo : config.repos().stream()
                     .filter(r -> r.id().equals(manifests.repo())).findFirst().orElse(codeRepo);
             var ci = config.ci() == null ? null : adapters.ci().create(config.ci().type(), config.ci());
-            return new DevOpsAgent(runtime, llm.orchestratorModel(), repo(adapters, deployRepo), manifests, ci, repair).run();
+            return new DevOpsAgent(runtime, llm.orchestratorModel(), repo(adapters, deployRepo), manifests, ci, repair, redactor).run();
         }));
 
         if (config.tickets() == null) {
@@ -50,7 +52,7 @@ public final class TaskPlanner {
                             + "where work is tracked and what is open.")));
         } else {
             tasks.add(new Orchestrator.Task("ticket agent", TicketAgent.TITLE, () -> new TicketAgent(runtime,
-                    llm.workerModel(), adapters.tickets().create(config.tickets().type(), config.tickets())).run()));
+                    llm.workerModel(), adapters.tickets().create(config.tickets().type(), config.tickets()), redactor).run()));
         }
         return tasks;
     }

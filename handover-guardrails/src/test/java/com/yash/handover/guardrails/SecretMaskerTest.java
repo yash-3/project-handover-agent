@@ -1,4 +1,4 @@
-package com.yash.handover.agents;
+package com.yash.handover.guardrails;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -27,9 +27,12 @@ class SecretMaskerTest {
     }
 
     @Test
-    void masksPrivateKeyBlocksAndHandlesNull() {
-        String key = "-----BEGIN RSA PRIVATE KEY-----\nMIIabc\n-----END RSA PRIVATE KEY-----";
-        assertThat(SecretMasker.mask("x\n" + key + "\ny")).doesNotContain("MIIabc");
+    void privateKeyBlocksAreMaskedWithoutChangingTheLineCount() {
+        String key = "-----BEGIN RSA PRIVATE KEY-----\nMIIabc\nMIIdef\n-----END RSA PRIVATE KEY-----";
+        String in = "x\n" + key + "\ny";
+        String out = SecretMasker.mask(in);
+        assertThat(out).doesNotContain("MIIabc");
+        assertThat(out.split("\n", -1)).hasSameSizeAs(in.split("\n", -1));
         assertThat(SecretMasker.mask(null)).isEmpty();
     }
 }

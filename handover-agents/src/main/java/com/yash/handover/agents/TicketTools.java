@@ -8,6 +8,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 
 import com.yash.handover.adapters.tickets.Ticket;
 import com.yash.handover.adapters.tickets.TicketSource;
+import com.yash.handover.guardrails.Redactor;
 
 /**
  * Read-only ticket tools. Ticket text is written by anyone, so it is untrusted data; output is
@@ -19,8 +20,14 @@ public final class TicketTools {
     static final int MAX_BODY_CHARS = 3000;
 
     private final List<Ticket> tickets;
+    private final Redactor redactor;
 
     public TicketTools(TicketSource source) {
+        this(source, Redactor.secretsOnly());
+    }
+
+    public TicketTools(TicketSource source, Redactor redactor) {
+        this.redactor = redactor;
         this.tickets = List.copyOf(source.listTickets());
     }
 
@@ -40,7 +47,7 @@ public final class TicketTools {
         StringBuilder sb = new StringBuilder();
         matching.stream().limit(MAX_LISTED).forEach(t -> sb.append(t.id()).append(" [").append(t.state())
                 .append("] [").append(t.kind()).append("] ").append(t.labels()).append(' ')
-                .append(t.title()).append('\n'));
+                .append(redactor.apply(t.title())).append('\n'));
         if (matching.size() > MAX_LISTED) {
             sb.append("... ").append(matching.size() - MAX_LISTED).append(" more tickets not shown\n");
         }
@@ -50,8 +57,8 @@ public final class TicketTools {
     @Tool(description = "Get one ticket with its description, by id exactly as listed (for example #12).")
     public String getTicket(@ToolParam(description = "ticket id, e.g. #12") String id) {
         return tickets.stream().filter(t -> t.id().equals(id)).findFirst()
-                .map(t -> t.id() + " [" + t.state() + "] " + t.title() + "\nLabels: " + t.labels() + "\nURL: "
-                        + t.url() + "\n\n" + cap(t.body()))
+                .map(t -> t.id() + " [" + t.state() + "] " + redactor.apply(t.title()) + "\nLabels: " + t.labels() + "\nURL: "
+                        + t.url() + "\n\n" + cap(redactor.apply(t.body())))
                 .orElse("ERROR: no ticket with id '" + id + "'");
     }
 

@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.yash.handover.adapters.repo.RepoSource;
+import com.yash.handover.guardrails.InjectionScanner;
+import com.yash.handover.guardrails.Redactor;
 
 /** Reads every file of a repo, chunks it, embeds it and stores it under the project's namespace. */
 public final class KnowledgeIndexer {
@@ -17,8 +19,15 @@ public final class KnowledgeIndexer {
     private final Chunker chunker;
     private final Embedder embedder;
     private final ChunkStore store;
+    private final Redactor redactor;
 
     public KnowledgeIndexer(Chunker chunker, Embedder embedder, ChunkStore store) {
+        this(chunker, embedder, store, Redactor.secretsOnly());
+    }
+
+    /** Content is redacted BEFORE chunking, so secrets never reach the vector store or the embeddings. */
+    public KnowledgeIndexer(Chunker chunker, Embedder embedder, ChunkStore store, Redactor redactor) {
+        this.redactor = redactor;
         this.chunker = chunker;
         this.embedder = embedder;
         this.store = store;
@@ -29,7 +38,12 @@ public final class KnowledgeIndexer {
         List<Chunk> chunks = new ArrayList<>();
         for (String path : repo.listFiles()) {
             try {
-                chunks.addAll(chunker.chunk(repo.repoId(), path, repo.readFile(path)));
+                String content = repo.readFile(path);
+                if (InjectionScanner.suspicious(content)) {
+                    log.warn("{} in {} contains instruction-like text (possible prompt injection); "
+                            + "agents treat it as data, but review it", path, repo.repoId());
+                }
+                chunks.addAll(chunker.chunk(repo.repoId(), path, redactor.apply(content)));
             } catch (RuntimeException e) {
                 log.warn("Skipping {} in {}: {}", path, repo.repoId(), e.getMessage());
             }

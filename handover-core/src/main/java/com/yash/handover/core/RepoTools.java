@@ -7,6 +7,7 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
 import com.yash.handover.adapters.repo.RepoSource;
+import com.yash.handover.guardrails.Redactor;
 
 /**
  * Read-only repository tools for agents. Failures come back as text so the model can recover,
@@ -19,6 +20,7 @@ public final class RepoTools {
 
     private final RepoSource repo;
     private final Consumer<String> onRead;
+    private final Redactor redactor;
 
     public RepoTools(RepoSource repo) {
         this(repo, path -> { });
@@ -26,8 +28,14 @@ public final class RepoTools {
 
     /** {@code onRead} is told the path of every file successfully handed to the model. */
     public RepoTools(RepoSource repo, Consumer<String> onRead) {
+        this(repo, onRead, Redactor.secretsOnly());
+    }
+
+    /** {@code redactor} masks secrets (and personal data if enabled) in every file handed to the model. */
+    public RepoTools(RepoSource repo, Consumer<String> onRead, Redactor redactor) {
         this.repo = repo;
         this.onRead = onRead;
+        this.redactor = redactor;
     }
 
     @Tool(description = "List the files of the repository (repo-relative paths, one per line).")
@@ -42,7 +50,7 @@ public final class RepoTools {
     @Tool(description = "Read one file of the repository by its repo-relative path (as returned by listFiles).")
     public String readFile(@ToolParam(description = "repo-relative path, e.g. src/Main.java") String path) {
         try {
-            String content = repo.readFile(path);
+            String content = redactor.apply(repo.readFile(path));
             onRead.accept(path);
             return content.length() > MAX_FILE_CHARS
                     ? content.substring(0, MAX_FILE_CHARS) + "\n... (truncated at " + MAX_FILE_CHARS + " characters)"

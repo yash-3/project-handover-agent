@@ -8,6 +8,7 @@ import com.yash.handover.adapters.ci.CISource;
 import com.yash.handover.adapters.repo.RepoSource;
 import com.yash.handover.config.ProjectConfig;
 import com.yash.handover.core.AgentRequest;
+import com.yash.handover.guardrails.Redactor;
 import com.yash.handover.core.AgentResult;
 import com.yash.handover.core.AgentRuntime;
 
@@ -38,6 +39,7 @@ public final class DevOpsAgent {
     private final ProjectConfig.Manifests manifests;
     private final CISource ci;
     private final boolean repairCitations;
+    private final Redactor redactor;
 
     /** {@code manifests} and {@code ci} may be null when the project does not configure them. */
     public DevOpsAgent(AgentRuntime runtime, String model, RepoSource repo, ProjectConfig.Manifests manifests,
@@ -48,6 +50,12 @@ public final class DevOpsAgent {
     /** {@code repairCitations}: if citations fail verification, run the agent once more to fix them (costs tokens). */
     public DevOpsAgent(AgentRuntime runtime, String model, RepoSource repo, ProjectConfig.Manifests manifests,
             CISource ci, boolean repairCitations) {
+        this(runtime, model, repo, manifests, ci, repairCitations, Redactor.secretsOnly());
+    }
+
+    public DevOpsAgent(AgentRuntime runtime, String model, RepoSource repo, ProjectConfig.Manifests manifests,
+            CISource ci, boolean repairCitations, Redactor redactor) {
+        this.redactor = redactor;
         this.repairCitations = repairCitations;
         this.runtime = runtime;
         this.model = model;
@@ -58,7 +66,7 @@ public final class DevOpsAgent {
 
     public SectionResult run() {
         Set<String> read = new LinkedHashSet<>();
-        DevOpsTools tools = new DevOpsTools(repo, manifests, ci, read::add);
+        DevOpsTools tools = new DevOpsTools(repo, manifests, ci, read::add, redactor);
         if (!tools.hasInputs()) {
             return new SectionResult(TITLE, "## Gaps\n\nNo deployment files or CI pipelines were found for this "
                     + "project. Ask the previous owner how it is built and deployed.", List.of(), List.of(), null);

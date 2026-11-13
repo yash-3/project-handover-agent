@@ -109,4 +109,12 @@ class ConfigLoaderTest {
         assertThat(l.load(sample).name()).isEqualTo("nexus-commerce");
         assertThat(l.load(sample).handover().repairCitations()).isFalse();
     }
+
+    @Test
+    void unsupportedAllowedToolsModeIsRejected() {
+        assertThatThrownBy(() -> loader.parse("demo.yaml", VALID + "guardrails:\n  allowedTools: all\n"))
+                .isInstanceOf(ConfigException.class).hasMessageContaining("allowedTools");
+        assertThat(loader.parse("demo.yaml", VALID + "guardrails:\n  allowedTools: readOnly\n  piiMasking: false\n")
+                .guardrails().piiMasking()).isFalse();
+    }
 }

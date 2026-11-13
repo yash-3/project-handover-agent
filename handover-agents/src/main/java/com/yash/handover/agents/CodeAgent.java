@@ -9,6 +9,7 @@ import com.yash.handover.core.AgentRequest;
 import com.yash.handover.core.AgentResult;
 import com.yash.handover.core.AgentRuntime;
 import com.yash.handover.core.RepoTools;
+import com.yash.handover.guardrails.Redactor;
 import com.yash.handover.knowledge.ChunkStore;
 import com.yash.handover.knowledge.Embedder;
 import com.yash.handover.knowledge.KnowledgeSearch;
@@ -45,6 +46,7 @@ public final class CodeAgent {
     private final RepoSource repo;
     private final int topK;
     private final boolean repairCitations;
+    private final Redactor redactor;
 
     public CodeAgent(AgentRuntime runtime, String project, String model, Embedder embedder,
             ChunkStore store, RepoSource repo, int topK) {
@@ -54,6 +56,12 @@ public final class CodeAgent {
     /** {@code repairCitations}: if citations fail verification, run the agent once more to fix them (costs tokens). */
     public CodeAgent(AgentRuntime runtime, String project, String model, Embedder embedder,
             ChunkStore store, RepoSource repo, int topK, boolean repairCitations) {
+        this(runtime, project, model, embedder, store, repo, topK, repairCitations, Redactor.secretsOnly());
+    }
+
+    public CodeAgent(AgentRuntime runtime, String project, String model, Embedder embedder,
+            ChunkStore store, RepoSource repo, int topK, boolean repairCitations, Redactor redactor) {
+        this.redactor = redactor;
         this.repairCitations = repairCitations;
         this.runtime = runtime;
         this.project = project;
@@ -68,11 +76,11 @@ public final class CodeAgent {
         Set<String> retrieved = new LinkedHashSet<>();
         Set<String> read = new LinkedHashSet<>();
         KnowledgeSearch search = new KnowledgeSearch(project, embedder, store, topK,
-                hits -> hits.stream().map(SearchHit::chunk).forEach(c -> retrieved.add(c.citation())));
+                hits -> hits.stream().map(SearchHit::chunk).forEach(c -> retrieved.add(c.citation())), redactor);
         var lines = LineCounts.of(repo);
         AgentRequest request = new AgentRequest("code", model, SYSTEM_PROMPT,
                 "Write the section for project '" + project + "'.",
-                List.of(search, new RepoTools(repo, read::add)), MAX_OUTPUT_TOKENS);
+                List.of(search, new RepoTools(repo, read::add, redactor)), MAX_OUTPUT_TOKENS);
         AgentResult result = runtime.run(request);
         var checked = CitationChecker.check(result.text(), retrieved, read, lines);
         var usage = result.usage();

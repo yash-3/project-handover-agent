@@ -18,15 +18,13 @@ import com.yash.handover.agents.TicketAgent;
 import com.yash.handover.adapters.tickets.TicketSource;
 import com.yash.handover.config.ConfigLoader;
 import com.yash.handover.config.ProjectConfig;
-import com.yash.handover.core.AnthropicModels;
-import com.yash.handover.core.PriceTable;
 import com.yash.handover.core.RunUsage;
-import com.yash.handover.core.SpringAiAgentRuntime;
 import com.yash.handover.knowledge.ChunkStore;
 import com.yash.handover.knowledge.Chunker;
 import com.yash.handover.knowledge.Embedder;
 import com.yash.handover.knowledge.KnowledgeIndexer;
 import com.yash.handover.knowledge.LocalEmbedders;
+import com.yash.handover.guardrails.Redactor;
 import com.yash.handover.knowledge.PgVectorChunkStore;
 import com.yash.handover.orchestrator.Approval;
 
@@ -108,7 +106,7 @@ public final class HandoverCli {
 
     private static int index(ProjectConfig config, Adapters adapters, Embedder embedder, ChunkStore store,
             PrintStream out) {
-        KnowledgeIndexer indexer = new KnowledgeIndexer(Chunker.defaults(), embedder, store);
+        KnowledgeIndexer indexer = new KnowledgeIndexer(Chunker.defaults(), embedder, store, Redactor.from(config.guardrails()));
         for (ProjectConfig.Repo repo : config.repos()) {
             RepoSource source = adapters.repos().create(repo.type(), repo);
             int n = indexer.index(config.name(), source);
@@ -122,9 +120,9 @@ public final class HandoverCli {
         ProjectConfig.Repo first = config.repos().get(0); // the code agent explores the first repo
         RepoSource source = adapters.repos().create(first.type(), first);
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
-        var runtime = new SpringAiAgentRuntime(AnthropicModels.fromEnv(), usage, PriceTable.defaults());
+        var runtime = Runtimes.guarded(config, usage);
         SectionResult r = new CodeAgent(runtime, config.name(), config.llm().orchestratorModel(), embedder, store,
-                source, TOP_K, repairFlag(config)).run();
+                source, TOP_K, repairFlag(config), Redactor.from(config.guardrails())).run();
         out.println(r.markdown());
         out.println();
         out.println("Verified citations: " + r.verifiedRefs());
@@ -160,8 +158,8 @@ public final class HandoverCli {
         RepoSource source = adapters.repos().create(repo.type(), repo);
         CISource ci = config.ci() == null ? null : adapters.ci().create(config.ci().type(), config.ci());
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
-        var runtime = new SpringAiAgentRuntime(AnthropicModels.fromEnv(), usage, PriceTable.defaults());
-        SectionResult r = new DevOpsAgent(runtime, config.llm().orchestratorModel(), source, manifests, ci, repairFlag(config)).run();
+        var runtime = Runtimes.guarded(config, usage);
+        SectionResult r = new DevOpsAgent(runtime, config.llm().orchestratorModel(), source, manifests, ci, repairFlag(config), Redactor.from(config.guardrails())).run();
         out.println(r.markdown());
         out.println();
         out.println("Verified citations: " + r.verifiedRefs());
@@ -179,8 +177,8 @@ public final class HandoverCli {
         }
         TicketSource source = adapters.tickets().create(config.tickets().type(), config.tickets());
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
-        var runtime = new SpringAiAgentRuntime(AnthropicModels.fromEnv(), usage, PriceTable.defaults());
-        SectionResult r = new TicketAgent(runtime, config.llm().workerModel(), source).run();
+        var runtime = Runtimes.guarded(config, usage);
+        SectionResult r = new TicketAgent(runtime, config.llm().workerModel(), source, Redactor.from(config.guardrails())).run();
         out.println(r.markdown());
         out.println();
         out.println("Verified ticket refs: " + r.verifiedRefs());
@@ -197,8 +195,8 @@ public final class HandoverCli {
         ProjectConfig.Repo first = config.repos().get(0); // readFile/listFiles tools use the first repo
         RepoSource source = adapters.repos().create(first.type(), first);
         RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
-        var runtime = new SpringAiAgentRuntime(AnthropicModels.fromEnv(), usage, PriceTable.defaults());
-        QaAgent agent = new QaAgent(runtime, config.name(), config.llm().workerModel(), embedder, store, source, TOP_K);
+        var runtime = Runtimes.guarded(config, usage);
+        QaAgent agent = new QaAgent(runtime, config.name(), config.llm().workerModel(), embedder, store, source, TOP_K, Redactor.from(config.guardrails()));
         Answer a = agent.ask(question);
         out.println(a.text());
         out.println();

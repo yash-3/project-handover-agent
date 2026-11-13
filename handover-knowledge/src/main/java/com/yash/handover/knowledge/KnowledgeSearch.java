@@ -6,6 +6,8 @@ import java.util.function.Consumer;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
+import com.yash.handover.guardrails.Redactor;
+
 /**
  * Retrieval for one project, exposed as an agent tool. Results carry {@code path:lines} citations;
  * the retrieved text is untrusted repository content, never instructions.
@@ -19,6 +21,7 @@ public final class KnowledgeSearch {
     private final ChunkStore store;
     private final int topK;
     private final Consumer<List<SearchHit>> listener;
+    private final Redactor redactor;
 
     public KnowledgeSearch(String project, Embedder embedder, ChunkStore store, int topK) {
         this(project, embedder, store, topK, hits -> { });
@@ -27,6 +30,12 @@ public final class KnowledgeSearch {
     /** {@code listener} sees every result list the agent retrieves (used to verify citations). */
     public KnowledgeSearch(String project, Embedder embedder, ChunkStore store, int topK,
             Consumer<List<SearchHit>> listener) {
+        this(project, embedder, store, topK, listener, Redactor.secretsOnly());
+    }
+
+    public KnowledgeSearch(String project, Embedder embedder, ChunkStore store, int topK,
+            Consumer<List<SearchHit>> listener, Redactor redactor) {
+        this.redactor = redactor;
         this.listener = listener;
         this.project = project;
         this.embedder = embedder;
@@ -51,7 +60,7 @@ public final class KnowledgeSearch {
         }
         StringBuilder sb = new StringBuilder();
         for (SearchHit h : hits) {
-            String text = h.chunk().text();
+            String text = redactor.apply(h.chunk().text()); // defence in depth: index-time masking may be older
             sb.append("[").append(h.chunk().citation()).append("]\n")
                     .append(text.length() > MAX_SNIPPET_CHARS ? text.substring(0, MAX_SNIPPET_CHARS) + "..." : text)
                     .append("\n---\n");

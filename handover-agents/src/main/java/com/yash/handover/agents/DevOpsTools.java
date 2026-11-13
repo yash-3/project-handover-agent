@@ -11,6 +11,7 @@ import com.yash.handover.adapters.ci.PipelineDefinition;
 import com.yash.handover.adapters.repo.PathFilter;
 import com.yash.handover.adapters.repo.RepoSource;
 import com.yash.handover.config.ProjectConfig;
+import com.yash.handover.guardrails.Redactor;
 
 /**
  * Read-only deployment tools: only the files matching {@code deploy.manifests.paths} and the CI
@@ -24,8 +25,15 @@ public final class DevOpsTools {
     private final PathFilter manifestFilter; // null = no manifest paths configured, so no deploy files
     private final List<PipelineDefinition> pipelines;
     private final Consumer<String> onRead;
+    private final Redactor redactor;
 
     public DevOpsTools(RepoSource repo, ProjectConfig.Manifests manifests, CISource ci, Consumer<String> onRead) {
+        this(repo, manifests, ci, onRead, Redactor.secretsOnly());
+    }
+
+    public DevOpsTools(RepoSource repo, ProjectConfig.Manifests manifests, CISource ci, Consumer<String> onRead,
+            Redactor redactor) {
+        this.redactor = redactor;
         this.repo = repo;
         boolean configured = manifests != null && manifests.paths() != null && !manifests.paths().isEmpty();
         this.manifestFilter = configured ? new PathFilter(new ProjectConfig.Paths(manifests.paths(), List.of())) : null;
@@ -53,7 +61,7 @@ public final class DevOpsTools {
             return "ERROR: '" + path + "' is not a deployment file. Use a path from listDeployFiles.";
         }
         try {
-            String content = cap(SecretMasker.mask(repo.readFile(path)));
+            String content = cap(redactor.apply(repo.readFile(path)));
             onRead.accept(path);
             return content;
         } catch (RuntimeException e) {
@@ -72,7 +80,7 @@ public final class DevOpsTools {
         return pipelines.stream().filter(p -> p.path().equals(path)).findFirst()
                 .map(p -> {
                     onRead.accept(p.path());
-                    return cap(SecretMasker.mask(p.content()));
+                    return cap(redactor.apply(p.content()));
                 })
                 .orElse("ERROR: no pipeline at '" + path + "'. Use a path from listPipelines.");
     }

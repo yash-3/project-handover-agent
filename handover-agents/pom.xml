@@ -18,6 +18,11 @@
     </dependency>
     <dependency>
       <groupId>com.yash.handover</groupId>
+      <artifactId>handover-guardrails</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.yash.handover</groupId>
       <artifactId>handover-knowledge</artifactId>
       <version>${project.version}</version>
     </dependency>
