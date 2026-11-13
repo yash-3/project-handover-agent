@@ -1,0 +1,36 @@
+# Postgres with pgvector for the knowledge layer.
+# Usage: POSTGRES_PASSWORD=<choose one> docker compose up -d
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: handover-postgres
+    environment:
+      POSTGRES_DB: handover
+      POSTGRES_USER: handover
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - handover-pgdata:/var/lib/postgresql/data
+
+  # Web UI for Postgres: http://localhost:5050
+  # Usage: PGADMIN_PASSWORD=<choose one> docker compose up -d pgadmin
+  # It connects to Postgres on your host (port 5432) via host.docker.internal, so it also
+  # works with a Postgres container that was not started from this file.
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: handover-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?set PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "127.0.0.1:5050:80"
+    volumes:
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - handover-pgadmin-data:/var/lib/pgadmin
+
+volumes:
+  handover-pgdata:
+  handover-pgadmin-data:
