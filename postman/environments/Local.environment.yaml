@@ -1,0 +1,22 @@
+name: Local
+values:
+  - key: base_url
+    value: 'http://127.0.0.1:8080'
+    enabled: true
+    type: default
+    description: Where the handover API listens
+  - key: project
+    value: nexus-commerce
+    enabled: true
+    type: default
+    description: Project name, as in projects/<name>.yaml
+  - key: approver
+    value: Yash Bhensdadiya
+    enabled: true
+    type: default
+    description: Name recorded in the audit log when approving a draft
+  - key: api_key
+    value: ''
+    enabled: true
+    type: secret
+    description: Your HANDOVER_API_KEY. Paste it in Postman, or pass it on the CLI with --env-var; never commit it.
