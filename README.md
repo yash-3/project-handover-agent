@@ -27,7 +27,8 @@ Stack: Java 21, Spring Boot 4.1.2, Spring AI 2.0.2 (see `docs/plan.md` and the a
 - [x] `handover-core` module: AgentRuntime port, Spring AI (Claude) implementation, usage and cost tracking, token budget, read-only repo tools
 - [x] `handover-knowledge` module: chunker, embedder port (local ONNX), pgvector store with hybrid search, indexer, `searchKnowledge` tool (`docker compose up -d` for Postgres)
 - [x] `handover-agents` module: Q&A agent (answers only from project sources, cites `path:lines`, flags citations the search never returned)
-- [x] `handover-app` module: CLI (`index`, `ask`, `code`, `tickets`)
+- [x] `handover-app` module: CLI (`index`, `ask`, `code`, `devops`, `tickets`)
 - [x] Ticket agent: "open work and known issues" section from the tracker, ticket ids checked against the tracker
 - [x] Code agent: "service overview and architecture" section for any language, citations checked (search results or files read)
-- [ ] `devops/docs agents`, `orchestrator`, `guardrails`, `observability`, `evals`, REST API
+- [x] DevOps agent: "build, deployment and operations" section from manifests and CI pipelines; secret values masked before the model sees them
+- [ ] `docs agent`, `orchestrator`, `guardrails`, `observability`, `evals`, REST API

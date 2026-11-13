@@ -9,7 +9,9 @@ import java.util.function.Function;
 import com.yash.handover.adapters.Adapters;
 import com.yash.handover.adapters.repo.RepoSource;
 import com.yash.handover.agents.Answer;
+import com.yash.handover.adapters.ci.CISource;
 import com.yash.handover.agents.CodeAgent;
+import com.yash.handover.agents.DevOpsAgent;
 import com.yash.handover.agents.QaAgent;
 import com.yash.handover.agents.SectionResult;
 import com.yash.handover.agents.TicketAgent;
@@ -33,13 +35,14 @@ import com.yash.handover.knowledge.PgVectorChunkStore;
  *   index &lt;project&gt;              read the project's repos and store them in pgvector
  *   ask   &lt;project&gt; &lt;question&gt;   answer a question from the indexed sources, with citations
  *   code    &lt;project&gt;            write the "service overview and architecture" section from the code
+ *   devops  &lt;project&gt;            write the "build, deployment and operations" section
  *   tickets &lt;project&gt;           write the "open work and known issues" section from the tracker
  * </pre>
  * Projects are read from {@code projects/<name>.yaml}.
  */
 public final class HandoverCli {
 
-    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  code <project>\n  tickets <project>";
+    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  code <project>\n  devops <project>\n  tickets <project>";
     private static final int EMBEDDING_DIMS = 384;
     private static final int TOP_K = 6;
 
@@ -53,7 +56,7 @@ public final class HandoverCli {
     }
 
     static int run(String[] args, Function<String, String> env, PrintStream out, PrintStream err) {
-        if (args.length < 2 || !List.of("index", "ask", "code", "tickets").contains(args[0])
+        if (args.length < 2 || !List.of("index", "ask", "code", "devops", "tickets").contains(args[0])
                 || (args[0].equals("ask") && args.length < 3)) {
             err.println(USAGE);
             return 2;
@@ -65,6 +68,9 @@ public final class HandoverCli {
         }
         try {
             ProjectConfig config = new ConfigLoader(env).load(Path.of("projects", project + ".yaml"));
+            if (args[0].equals("devops")) { // needs no database or embeddings
+                return devops(config, Adapters.defaults(), out);
+            }
             if (args[0].equals("tickets")) { // needs no database or embeddings
                 return tickets(config, Adapters.defaults(), out);
             }
@@ -115,6 +121,27 @@ public final class HandoverCli {
         out.println("Verified citations: " + r.verifiedRefs());
         if (!r.fullyGrounded()) {
             out.println("WARNING - citations the agent never saw (may be wrong): " + r.unverifiedRefs());
+        }
+        out.println("Tokens: " + usage.totalTokens() + ", est. cost USD: " + usage.totalCostUsd().toPlainString()
+                + (usage.costComplete() ? "" : " (lower bound)"));
+        return 0;
+    }
+
+    private static int devops(ProjectConfig config, Adapters adapters, PrintStream out) {
+        ProjectConfig.Manifests manifests = config.deploy() == null ? null : config.deploy().manifests();
+        String repoId = manifests == null ? config.repos().get(0).id() : manifests.repo();
+        ProjectConfig.Repo repo = config.repos().stream().filter(r -> r.id().equals(repoId)).findFirst()
+                .orElseThrow(() -> new IllegalStateException("deploy.manifests.repo '" + repoId + "' not found"));
+        RepoSource source = adapters.repos().create(repo.type(), repo);
+        CISource ci = config.ci() == null ? null : adapters.ci().create(config.ci().type(), config.ci());
+        RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
+        var runtime = new SpringAiAgentRuntime(AnthropicModels.fromEnv(), usage, PriceTable.defaults());
+        SectionResult r = new DevOpsAgent(runtime, config.llm().orchestratorModel(), source, manifests, ci).run();
+        out.println(r.markdown());
+        out.println();
+        out.println("Verified citations: " + r.verifiedRefs());
+        if (!r.fullyGrounded()) {
+            out.println("WARNING - citations of files the agent never read (may be wrong): " + r.unverifiedRefs());
         }
         out.println("Tokens: " + usage.totalTokens() + ", est. cost USD: " + usage.totalCostUsd().toPlainString()
                 + (usage.costComplete() ? "" : " (lower bound)"));
