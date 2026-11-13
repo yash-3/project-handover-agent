@@ -19,6 +19,7 @@ import com.yash.handover.adapters.tickets.TicketSource;
 import com.yash.handover.config.ConfigLoader;
 import com.yash.handover.config.ProjectConfig;
 import com.yash.handover.core.RunUsage;
+import com.yash.handover.core.TraceReport;
 import com.yash.handover.knowledge.ChunkStore;
 import com.yash.handover.knowledge.Chunker;
 import com.yash.handover.knowledge.Embedder;
@@ -37,13 +38,15 @@ import com.yash.handover.orchestrator.Approval;
  *   devops  &lt;project&gt;            write the "build, deployment and operations" section
  *   draft   &lt;project&gt;            run all agents and save the handover as handover-DRAFT.md
  *   approve &lt;project&gt; &lt;name&gt;     approve the reviewed draft as handover.md (audited)
+ *   report  &lt;project&gt;           summarise runs, tokens, cost and tool calls from the trace
+ *   eval    &lt;project&gt; [--judge] [file]   run the question set against the Q&amp;A agent and score it
  *   tickets &lt;project&gt;           write the "open work and known issues" section from the tracker
  * </pre>
  * Projects are read from {@code projects/<name>.yaml}.
  */
 public final class HandoverCli {
 
-    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  code <project>\n  devops <project>\n  draft <project>\n  approve <project> <your name>\n  tickets <project>";
+    static final String USAGE = "Usage:\n  index <project>\n  ask <project> <question...>\n  code <project>\n  devops <project>\n  draft <project>\n  approve <project> <your name>\n  report <project>\n  eval <project> [--judge] [file]\n  tickets <project>";
     private static final int EMBEDDING_DIMS = 384;
     private static final int TOP_K = 6;
 
@@ -57,7 +60,7 @@ public final class HandoverCli {
     }
 
     static int run(String[] args, Function<String, String> env, PrintStream out, PrintStream err) {
-        if (args.length < 2 || !List.of("index", "ask", "code", "devops", "draft", "approve", "tickets").contains(args[0])
+        if (args.length < 2 || !List.of("index", "ask", "code", "devops", "draft", "approve", "report", "eval", "tickets").contains(args[0])
                 || ((args[0].equals("ask") || args[0].equals("approve")) && args.length < 3)) {
             err.println(USAGE);
             return 2;
@@ -69,6 +72,14 @@ public final class HandoverCli {
         }
         try {
             ProjectConfig config = new ConfigLoader(env).load(Path.of("projects", project + ".yaml"));
+            if (args[0].equals("report")) { // needs only the config
+                var file = Runtimes.traceFile(config);
+                if (file == null) {
+                    throw new IllegalStateException("handover.outputDir must be set in the project config");
+                }
+                out.println(TraceReport.summarize(file));
+                return 0;
+            }
             if (args[0].equals("approve")) { // needs only the config
                 return approve(config, String.join(" ", Arrays.copyOfRange(args, 2, args.length)), out);
             }
@@ -83,6 +94,10 @@ public final class HandoverCli {
             Adapters adapters = Adapters.defaults();
             if (args[0].equals("index")) {
                 return index(config, adapters, embedder, store, out);
+            }
+            if (args[0].equals("eval")) {
+                return EvalCommand.run(config, adapters, embedder, store,
+                        Arrays.asList(args).subList(2, args.length), out);
             }
             if (args[0].equals("draft")) {
                 return DraftCommand.run(config, adapters, embedder, store, out);

@@ -1,0 +1,35 @@
+# Starter eval set for nexus-commerce. The file names below come from the first generated handover
+# draft; review them and ADD your own knowledge of the project (mustContain terms, a reference answer).
+#
+#   mustContain    terms the answer must all contain (case-insensitive)
+#   mustCite       file-name parts that must appear in a VERIFIED citation
+#   expectNotFound true when the sources cannot answer: the agent must say it could not find it
+#   reference      a model answer; only used when you run `eval <project> --judge`
+questions:
+  - id: order-create
+    question: How does the order service create an order, and which classes are involved?
+    mustCite: [OrderService.java]
+  - id: order-status
+    question: What statuses can an order have?
+    mustCite: [OrderStatus.java]
+  - id: order-events
+    question: How are order events published?
+    mustCite: [OrderEventPublisher.java]
+  - id: notification-dedup
+    question: How does the notification consumer avoid processing the same event twice?
+    mustCite: [NotificationDeduplicationService.java]
+  - id: payment
+    question: How does the payment service process a payment?
+    mustCite: [PaymentService.java]
+  - id: inventory
+    question: How does the order service call the inventory service?
+    mustCite: [InventoryClient.java]
+  - id: compliance-audit
+    question: What does the compliance audit service record?
+    mustCite: [ComplianceAuditService.java]
+  - id: unknown-ceo
+    question: Who is the CEO of Nexus Commerce?
+    expectNotFound: true
+  - id: unknown-secret
+    question: What is the production database password?
+    expectNotFound: true

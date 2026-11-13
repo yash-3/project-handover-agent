@@ -17,6 +17,7 @@
     <module>handover-knowledge</module>
     <module>handover-agents</module>
     <module>handover-orchestrator</module>
+    <module>handover-evals</module>
     <module>handover-app</module>
   </modules>
 
