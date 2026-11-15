@@ -1,0 +1,48 @@
+# Benchmark project: Apache ShenYu (public, Apache-2.0), cloned by scripts/fetch-benchmark-repo.sh into
+# benchmarks/repos/shenyu (git-ignored). Same platform code as the other projects, config only.
+# CI and issues are read from the public GitHub repo; GITHUB_TOKEN only needs read access to public data.
+name: shenyu
+languages: [java]
+repos:
+  - id: shenyu
+    type: local
+    url: benchmarks/repos/shenyu      # run the tools from the repository root
+    paths:
+      exclude:
+        - "**/src/test/**"
+        - "shenyu-examples/**"
+        - "shenyu-e2e/**"
+        - "shenyu-integrated-test/**"
+        - "docs/**"
+        - "**/*.js"
+        - "**/*.sql"
+        - "**/*.md"
+ci:
+  type: github-actions
+  url: https://github.com/apache/shenyu/actions
+  auth: ${GITHUB_TOKEN}
+deploy:
+  manifests:
+    repo: shenyu
+    paths: ["**/Dockerfile", "shenyu-dist/**/docker/**", "shenyu-dist/shenyu-docker-compose-dist/src/main/resources/docker-compose.yaml"]
+  environments: [dev]
+tickets:
+  type: github-issues
+  url: https://github.com/apache/shenyu/issues
+  auth: ${GITHUB_TOKEN}
+domain:
+  vocabulary:
+    selector: a rule group that decides which requests a plugin handles
+    plugin: a gateway extension that processes each request (for example waf, rewrite, redirect)
+llm:
+  workerModel: claude-haiku-5-5
+  orchestratorModel: claude-sonnet-5-5
+  maxTokensPerRun: 1200000   # one budget shared by all agents of a run; the code agent alone used ~500K here
+handover:
+  template: templates/default.md
+  outputDir: outputs/shenyu
+  approvalRequired: true
+  repairCitations: false
+guardrails:
+  piiMasking: true
+  allowedTools: readOnly

@@ -64,6 +64,14 @@ class EvalsTest {
         assertThat(cases).anyMatch(EvalCase::unanswerable);
     }
 
+    @Test
+    void secondProjectEvalSetIsValidAndHasRealAnswerTerms() {
+        var cases = EvalSetLoader.load(java.nio.file.Path.of("..", "evals", "python-inventory.yaml"));
+        assertThat(cases).hasSize(9);
+        assertThat(cases.stream().filter(EvalCase::unanswerable)).hasSize(2);
+        assertThat(cases).anyMatch(c -> c.mustContain().contains("FOR UPDATE"));
+    }
+
     // ---- grader
     @Test
     void answerableQuestionPassesOnlyWithTermsVerifiedCitationAndGrounding() {
@@ -80,6 +88,18 @@ class EvalsTest {
                 List.of("ghost.java:1-2"))).passed()).isFalse(); // invented citation blocks a pass
         assertThat(EvalGrader.grade(c, answer("I could not find this in the project sources.", List.of(), List.of()))
                 .passed()).isFalse();
+    }
+
+    @Test
+    void markdownResultsExplainEachFailure() {
+        var failing = new CaseResult(new EvalCase("q1", "Which port?", List.of("9195"), List.of(), false, null),
+                "It uses 8080.", List.of(new CaseResult.Check("contains 9195", false, "missing: 9195")), true, true,
+                null, null);
+        var passing = new CaseResult(new EvalCase("q2", "Which module?", List.of("x"), List.of(), false, null),
+                "x", List.of(new CaseResult.Check("contains x", true, "")), true, true, null, null);
+        String md = new EvalReport(List.of(failing, passing)).toMarkdown("demo", "2026-11-14");
+        assertThat(md).contains("Passed 1 of 2", "## FAIL q1", "Failed check `contains 9195`: missing: 9195",
+                "> It uses 8080.", "## PASS q2");
     }
 
     @Test

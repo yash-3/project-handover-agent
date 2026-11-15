@@ -33,6 +33,33 @@ final class EvalCommand {
 
     static int run(ProjectConfig config, Adapters adapters, Embedder embedder, ChunkStore store, List<String> flags,
             PrintStream out) {
+        EvalReport report = score(config, adapters, embedder, store, flags, out);
+        out.println();
+        out.print(report.render());
+        saveHistory(config, report, out);
+        saveResults(config, report, out);
+        return report.passed() == report.total() ? 0 : 1;
+    }
+
+    /** Writes {@code eval-results.md}: every question, its verdict, why it failed, and the answer. */
+    static void saveResults(ProjectConfig config, EvalReport report, PrintStream out) {
+        if (config.handover() == null || config.handover().outputDir() == null) {
+            return;
+        }
+        Path file = Path.of(config.handover().outputDir(), "eval-results.md");
+        try {
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, report.toMarkdown(config.name(), java.time.LocalDate.now().toString()),
+                    StandardCharsets.UTF_8);
+            out.println("Per-question results (with reasons for failures) saved to " + file);
+        } catch (IOException e) {
+            out.println("Could not save the per-question results: " + e.getMessage());
+        }
+    }
+
+    /** Runs the question set and returns the scores, without printing the summary or saving history. */
+    static EvalReport score(ProjectConfig config, Adapters adapters, Embedder embedder, ChunkStore store,
+            List<String> flags, PrintStream out) {
         boolean judge = flags.contains("--judge");
         String file = flags.stream().filter(f -> !f.startsWith("--")).findFirst()
                 .orElse("evals/" + config.name() + ".yaml");
@@ -41,17 +68,24 @@ final class EvalCommand {
 
         ProjectConfig.Repo first = config.repos().get(0);
         RepoSource source = adapters.repos().create(first.type(), first);
-        RunUsage usage = new RunUsage(config.llm().maxTokensPerRun());
+        RunUsage usage = new RunUsage(evalBudget(config.llm().maxTokensPerRun(), cases.size()));
         var runtime = Runtimes.guarded(config, usage);
         QaAgent agent = new QaAgent(runtime, config.llm().workerModel(),
                 new KnowledgeAccess(config.name(), embedder, store, TOP_K), source, Redactor.from(config.guardrails()));
-        EvalReport report = new EvalRunner(agent::ask,
+        return new EvalRunner(agent::ask,
                 judge ? new LlmJudge(runtime, config.llm().workerModel()) : null).run(cases, out::println);
+    }
 
-        out.println();
-        out.print(report.render());
-        saveHistory(config, report, out);
-        return report.passed() == report.total() ? 0 : 1;
+    /**
+     * One run budget is shared by every question, so a long question set must not be cut off by the budget
+     * meant for a single draft: each question may use up to a fifth of {@code maxTokensPerRun}.
+     */
+    static Integer evalBudget(Integer maxTokensPerRun, int questions) {
+        if (maxTokensPerRun == null) {
+            return null;
+        }
+        long total = (long) maxTokensPerRun / 5 * Math.max(questions, 1);
+        return (int) Math.min(Math.max(total, maxTokensPerRun), Integer.MAX_VALUE);
     }
 
     private static void saveHistory(ProjectConfig config, EvalReport report, PrintStream out) {

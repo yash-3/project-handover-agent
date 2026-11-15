@@ -75,4 +75,22 @@ public record EvalReport(List<CaseResult> results) {
                 time, project.replace("\"", ""), total(), passed(), passRate(), citedRate(), groundedRate(),
                 refusalRate(), totalTokens(), totalCostUsd().toPlainString());
     }
+
+    /** Every question with its verdict, the failed checks and the answer, so each failure can be explained. */
+    public String toMarkdown(String project, String date) {
+        StringBuilder sb = new StringBuilder("# Eval results: ").append(project).append("\n\nRun ").append(date)
+                .append(". Passed ").append(passed()).append(" of ").append(total()).append(".\n\n");
+        for (CaseResult r : results) {
+            sb.append("## ").append(r.passed() ? "PASS" : "FAIL").append(" ").append(r.evalCase().id()).append("\n\n")
+                    .append("Question: ").append(r.evalCase().question()).append("\n\n");
+            if (r.error() != null) {
+                sb.append("Error: ").append(r.error()).append("\n\n");
+            }
+            r.checks().stream().filter(c -> !c.ok()).forEach(c -> sb.append("- Failed check `").append(c.name())
+                    .append("`: ").append(c.detail()).append('\n'));
+            sb.append("\nAnswer:\n\n").append(r.answer() == null ? "(none)" : r.answer().strip().replaceAll("(?m)^", "> "))
+                    .append("\n\n");
+        }
+        return sb.toString();
+    }
 }

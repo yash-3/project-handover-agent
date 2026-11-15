@@ -1,0 +1,147 @@
+# Eval set for the shenyu benchmark (apache/shenyu, cloned to benchmarks/repos/shenyu).
+# Every mustContain term and mustCite path was checked against the clone before the live run
+# (scripts/verify-eval-key.py), so a failure is a finding about the agent, not a typo in the key.
+# Revised 2026-11-14 after a first run (36/41): 4 questions were ambiguous or over-strict and were rewritten
+# (wasm-plugin, web-filters, client-mcp, root-modules); the answers they got were reasonable, the key was the problem.
+# Only content the Q&A agent can see is used: indexed source and config (tests, docs, .md, .sql, .js excluded).
+questions:
+  # --- runtime and ports ---
+  - id: gateway-port
+    question: Which port does the ShenYu gateway (bootstrap) listen on?
+    mustContain: ["9195"]
+    mustCite: [application.yml]
+  - id: admin-port
+    question: Which port does the admin console listen on?
+    mustContain: ["9095"]
+    mustCite: [application.yml]
+  - id: bootstrap-health
+    question: Which HTTP path does the bootstrap Docker image call for its health check?
+    mustContain: [actuator/health]
+    mustCite: [Dockerfile]
+  - id: docker-base-image
+    question: Which base image do the bootstrap and admin runtime Docker images use?
+    mustContain: [amazoncorretto]
+    mustCite: [Dockerfile]
+  - id: compose-images
+    question: Which images does the docker-compose distribution start?
+    mustContain: [apache/shenyu-bootstrap, apache/shenyu-admin]
+    mustCite: [docker-compose]
+  - id: java-version
+    question: Which Java version does the project build with?
+    mustContain: ["17"]
+    mustCite: [pom.xml]
+  - id: spring-boot-version
+    question: Which Spring Boot version does the parent pom use?
+    mustContain: ["3.5"]
+    mustCite: [pom.xml]
+  # --- configuration and data sync ---
+  - id: admin-databases
+    question: Which databases can the admin console be configured to use?
+    mustContain: [mysql, oracle]
+  - id: sync-mechanisms
+    question: Which mechanisms can the gateway use to synchronise data from the admin console?
+    mustContain: [websocket, zookeeper, nacos]
+  - id: sync-more
+    question: Besides websocket, zookeeper and nacos, which other data sync modules exist?
+    mustContain: [etcd, apollo, http]
+  - id: sync-modules
+    question: In which parent module do the data synchronisation implementations live?
+    mustContain: [shenyu-sync-data-center]
+  - id: registry-backends
+    question: Which service registry backends have their own module?
+    mustContain: [eureka, etcd, kubernetes]
+  - id: register-client-http
+    question: Which module holds the HTTP client-side service registration code?
+    mustContain: [shenyu-register-client-http]
+  # --- plugins ---
+  - id: waf-plugin
+    question: Which module contains the WAF plugin?
+    mustContain: [shenyu-plugin-waf]
+  - id: rewrite-plugin
+    question: Which module contains the rewrite plugin?
+    mustContain: [shenyu-plugin-rewrite]
+  - id: cache-plugin
+    question: Which module contains the cache plugin?
+    mustContain: [shenyu-plugin-cache]
+  - id: tracing-plugin
+    question: Which module contains the tracing plugin?
+    mustContain: [shenyu-plugin-tracing]
+  - id: ai-plugin
+    question: Which module contains the AI plugin?
+    mustContain: [shenyu-plugin-ai]
+  - id: mcp-plugin
+    question: Which module contains the MCP server plugin?
+    mustContain: [shenyu-plugin-mcp-server]
+  - id: wasm-plugin
+    question: Which module contains the WasmLoader class?
+    mustContain: [shenyu-plugin-wasm-api]
+    mustCite: [WasmLoader]
+  - id: plugin-base-class
+    question: Which abstract class do gateway plugins extend?
+    mustContain: [AbstractShenyuPlugin]
+  # --- core design ---
+  - id: web-handler
+    question: Which class runs the plugin chain for each request?
+    mustContain: [ShenyuWebHandler]
+  - id: web-filters
+    question: Which filter class in the shenyu-web module handles the health check?
+    mustContain: [HealthFilter]
+    mustCite: [HealthFilter]
+  - id: spi-loader
+    question: Which class loads extensions in the SPI module?
+    mustContain: [ExtensionLoader]
+  - id: spi-module
+    question: Which module contains the SPI mechanism?
+    mustContain: [shenyu-spi]
+  - id: disruptor-module
+    question: Which module wraps the Disruptor queue?
+    mustContain: [shenyu-disruptor]
+  - id: load-balancers
+    question: Which classes implement load balancing algorithms?
+    mustContain: [RandomLoadBalancer, RoundRobinLoadBalancer]
+  - id: p2c-balancer
+    question: Which class implements the power-of-two-choices load balancer?
+    mustContain: [P2cLoadBalancer]
+  - id: admin-bootstrap
+    question: Which class starts the admin application?
+    mustContain: [ShenyuAdminBootstrap]
+  - id: admin-security
+    question: Which security library does the admin module use for authentication (see its packages)?
+    mustContain: [shiro]
+  # --- modules and clients ---
+  - id: client-types
+    question: Which protocol-specific client modules exist under shenyu-client?
+    mustContain: [dubbo, grpc, sofa, tars]
+  - id: client-mcp
+    question: Which module contains the McpServiceEventListener class?
+    mustContain: [shenyu-client-mcp-register]
+    mustCite: [McpServiceEventListener]
+  - id: sdk-modules
+    question: Which HTTP client implementations does shenyu-sdk provide?
+    mustContain: [feign, okhttp]
+  - id: k8s-controller
+    question: Which module is the Kubernetes controller?
+    mustContain: [shenyu-kubernetes-controller]
+  - id: root-modules
+    question: Which top-level Maven module contains the gateway bootstrap application?
+    mustContain: [shenyu-bootstrap]
+    mustCite: [shenyu-bootstrap]
+  - id: dist-modules
+    question: Which distribution modules package the admin and the bootstrap?
+    mustContain: [shenyu-admin-dist, shenyu-bootstrap-dist]
+  # --- things the sources cannot answer ---
+  - id: unknown-payment
+    question: Which payment provider does the project use?
+    expectNotFound: true
+  - id: unknown-secret
+    question: What is the production database password of the admin console?
+    expectNotFound: true
+  - id: unknown-cloud
+    question: Which cloud provider hosts the official production deployment?
+    expectNotFound: true
+  - id: unknown-sla
+    question: What uptime SLA does the project guarantee to customers?
+    expectNotFound: true
+  - id: unknown-team
+    question: How many engineers are on the on-call rota?
+    expectNotFound: true

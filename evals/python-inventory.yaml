@@ -1,0 +1,38 @@
+# Eval set for the python-inventory sample. The answers are known because the sample code is in this
+# repository (samples/python-inventory), so mustContain terms are real facts, not guesses.
+#
+# Needs the project indexed first: index python-inventory
+questions:
+  - id: low-stock-event
+    question: When does the service publish a low-stock event?
+    mustContain: [stock.low]
+    mustCite: [inventory.py]
+  - id: no-overselling
+    question: How does the service stop two orders from reserving the last unit of the same SKU?
+    mustContain: [FOR UPDATE]
+    mustCite: [db.py]
+  - id: database
+    question: How does the service connect to its database?
+    mustContain: [pool]
+    mustCite: [db.py]
+  - id: credentials
+    question: Where do the pods get their database and message broker credentials in Kubernetes?
+    mustContain: [secret]
+    mustCite: [deployment.yaml]
+  - id: probes
+    question: Which endpoint do the Kubernetes health probes call?
+    mustContain: [/health]
+    mustCite: [deployment.yaml]
+  - id: rollback
+    question: How do I roll back a bad release?
+    mustContain: [rollout undo]
+    mustCite: [RUNBOOK.md]
+  - id: events
+    question: Which message broker does the service publish events to?
+    mustContain: [RabbitMQ]
+  - id: unknown-payment
+    question: Which payment provider does the service use?
+    expectNotFound: true
+  - id: unknown-secret
+    question: What is the production database password?
+    expectNotFound: true

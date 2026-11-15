@@ -35,4 +35,20 @@ class SecretMaskerTest {
         assertThat(out.split("\n", -1)).hasSameSizeAs(in.split("\n", -1));
         assertThat(SecretMasker.mask(null)).isEmpty();
     }
+
+    @Test
+    void masksPasswordsInConnectionStringsButKeepsReferencesAndPlainUrls() {
+        String in = String.join("\n",
+                "url = postgresql://inventory:hunter2@db:5432/inventory",
+                "amqp: amqp://guest:s3cret@rabbitmq:5672/",
+                "ok1: postgresql://inventory:${DB_PASSWORD}@db:5432/inventory",
+                "ok2: https://example.com/docs:8080/path",
+                "ok3: https://user@example.com/repo");
+        String out = SecretMasker.mask(in);
+        assertThat(out).doesNotContain("hunter2").doesNotContain("s3cret");
+        assertThat(out).contains("postgresql://inventory:****@db:5432/inventory")
+                .contains("amqp://guest:****@rabbitmq")
+                .contains("${DB_PASSWORD}").contains("https://example.com/docs:8080/path")
+                .contains("https://user@example.com/repo");
+    }
 }

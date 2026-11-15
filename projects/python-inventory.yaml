@@ -1,0 +1,31 @@
+# Second sample project: a small Python service, read from a local folder.
+# No ci and no tickets section: the platform skips what is not configured. Nothing in the Java code
+# is specific to this project or to Python, which is the point of this sample.
+name: python-inventory
+languages: [python]
+repos:
+  - id: inventory
+    type: local
+    url: samples/python-inventory     # run the tools from the repository root
+    paths:
+      exclude: ["**/__pycache__/**", "**/tests/**"]
+deploy:
+  manifests:
+    repo: inventory
+    paths: ["deploy/**", "Dockerfile"]
+  environments: [staging, production]
+domain:
+  vocabulary:
+    SKU: stock keeping unit, the unique id of a product variant
+llm:
+  workerModel: claude-haiku-5-5
+  orchestratorModel: claude-sonnet-5-5
+  maxTokensPerRun: 300000
+handover:
+  template: templates/default.md
+  outputDir: outputs/python-inventory
+  approvalRequired: true
+  repairCitations: false
+guardrails:
+  piiMasking: true
+  allowedTools: readOnly

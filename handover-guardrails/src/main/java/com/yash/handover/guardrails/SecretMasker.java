@@ -19,6 +19,8 @@ public final class SecretMasker {
     private static final Pattern TOKEN_SHAPES = Pattern.compile(
             "gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{20,}"
                     + "|xox[baprs]-[A-Za-z0-9-]{10,}");
+    // scheme://user:password@host - the password part of a connection string
+    private static final Pattern URL_CREDENTIALS = Pattern.compile("(\\b[a-zA-Z][a-zA-Z0-9+.-]*://[^:/\\s@]+:)([^@\\s/]+)(@)");
     private static final Pattern PRIVATE_KEY = Pattern.compile(
             "-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", Pattern.DOTALL);
 
@@ -26,6 +28,18 @@ public final class SecretMasker {
     }
 
     /** Masks secret values. Line count is preserved, so line numbers in citations stay valid. */
+    private static String maskUrlCredentials(String text) {
+        Matcher m = URL_CREDENTIALS.matcher(text);
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            String password = m.group(2);
+            boolean reference = password.startsWith("$") || password.startsWith("{{") || password.equals(MASK);
+            m.appendReplacement(sb, Matcher.quoteReplacement(reference ? m.group() : m.group(1) + MASK + m.group(3)));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
     public static String mask(String text) {
         if (text == null) {
             return "";
@@ -39,6 +53,7 @@ public final class SecretMasker {
         pk.appendTail(keyless);
         String out = keyless.toString();
         out = TOKEN_SHAPES.matcher(out).replaceAll(MASK);
+        out = maskUrlCredentials(out);
         Matcher m = KEY_VALUE.matcher(out);
         StringBuilder sb = new StringBuilder();
         while (m.find()) {

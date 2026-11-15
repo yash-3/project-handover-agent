@@ -43,6 +43,8 @@ import com.yash.handover.orchestrator.Approval;
  *   report  &lt;project&gt;           summarise runs, tokens, cost and tool calls from the trace
  *   eval    &lt;project&gt; [--judge] [file]   run the question set against the Q&amp;A agent and score it
  *   tickets &lt;project&gt;           write the "open work and known issues" section from the tracker
+ *   benchmark &lt;project&gt; [--manual-minutes N] [--review-minutes N] [--skip-index] [--skip-eval]
+ *                                measure size, time, cost and quality; writes benchmark.md and benchmark.json
  * </pre>
  * Projects are read from {@code projects/<name>.yaml}.
  */
@@ -50,9 +52,10 @@ public final class HandoverCli {
 
     static final String USAGE = String.join("\n", "Usage:", "  index <project>", "  ask <project> <question...>",
             "  code <project>", "  devops <project>", "  draft <project>", "  approve <project> <your name>",
-            "  report <project>", "  eval <project> [--judge] [file]", "  tickets <project>");
+            "  report <project>", "  eval <project> [--judge] [file]", "  tickets <project>",
+            "  benchmark <project> [--manual-minutes N] [--review-minutes N] [--skip-index] [--skip-eval]");
     private static final List<String> COMMANDS = List.of("index", "ask", "code", "devops", "draft", "approve",
-            "report", "eval", "tickets");
+            "report", "eval", "tickets", "benchmark");
     private static final Pattern PROJECT_NAME = Pattern.compile("[a-z0-9][a-z0-9-]*");
     private static final String VERIFIED_CITATIONS = "Verified citations: ";
     private static final String OUTPUT_DIR_REQUIRED = "handover.outputDir must be set in the project config";
@@ -116,6 +119,8 @@ public final class HandoverCli {
         Adapters adapters = Adapters.defaults();
         return switch (args[0]) {
             case "index" -> index(config, adapters, embedder, store, out);
+            case "benchmark" -> BenchmarkCommand.run(config, adapters, embedder, store,
+                    Arrays.asList(args).subList(2, args.length), out);
             case "eval" -> EvalCommand.run(config, adapters, embedder, store,
                     Arrays.asList(args).subList(2, args.length), out);
             case "draft" -> DraftCommand.run(config, adapters, embedder, store, out);
@@ -156,13 +161,22 @@ public final class HandoverCli {
 
     private static int index(ProjectConfig config, Adapters adapters, Embedder embedder, ChunkStore store,
             PrintStream out) {
+        indexAll(config, adapters, embedder, store, out);
+        return 0;
+    }
+
+    /** Indexes every repo of the project and returns the total number of chunks stored. */
+    static long indexAll(ProjectConfig config, Adapters adapters, Embedder embedder, ChunkStore store,
+            PrintStream out) {
         KnowledgeIndexer indexer = new KnowledgeIndexer(Chunker.defaults(), embedder, store, Redactor.from(config.guardrails()));
+        long total = 0;
         for (ProjectConfig.Repo repo : config.repos()) {
             RepoSource source = adapters.repos().create(repo.type(), repo);
             int n = indexer.index(config.name(), source);
+            total += n;
             out.println("Indexed " + n + " chunks from repo '" + repo.id() + "'");
         }
-        return 0;
+        return total;
     }
 
     private static int code(ProjectConfig config, Adapters adapters, Embedder embedder, ChunkStore store,

@@ -12,3 +12,5 @@ evals/answer_key*
 target/
 .idea/
 *.iml
+benchmarks/repos/*
+!benchmarks/repos/.gitkeep
